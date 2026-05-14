@@ -1,0 +1,38 @@
+# ═══════════════════════════════════════════════════════════
+#  Veelead Helpdesk RAG Bot — Python dependencies
+# ═══════════════════════════════════════════════════════════
+#  Install:  pip install -r requirements.txt
+#
+#  All versions are pinned to known-stable releases.
+# ═══════════════════════════════════════════════════════════
+
+# ── Web framework ──
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+
+# ── Environment / config ──
+python-dotenv==1.0.1
+
+# ── Azure OpenAI client (embeddings + chat) ──
+openai==1.57.4
+
+# ── Azure AI Search (vector + keyword index) ──
+azure-search-documents==11.5.2
+azure-core==1.32.0
+
+# ── Microsoft Graph (SharePoint access, used only in sharepoint mode) ──
+msal==1.31.1
+requests==2.32.3
+
+# ── Document parsing ──
+pypdf==5.1.0                 # PDF extraction
+python-docx==1.1.2           # DOCX extraction
+beautifulsoup4==4.12.3       # HTML extraction
+lxml==5.3.0                  # XML/HTML parser backend (faster than html.parser)
+
+# ── Scheduler (for auto-sync every hour) ──
+apscheduler==3.10.4
+
+# ── Optional: nicer console output during dev ──
+# rich==13.9.4

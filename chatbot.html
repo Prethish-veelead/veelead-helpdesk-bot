@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veelead Helpdesk Bot</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f7fa;
+    color: #1a1a1a;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header {
+    background: #2c5282;
+    color: white;
+    padding: 16px 24px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  header .subtitle { font-size: 0.85rem; opacity: 0.85; margin-top: 2px; }
+  header .status {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+  }
+  header .status.ok { background: rgba(34,197,94,0.3); }
+  header .status.err { background: rgba(239,68,68,0.3); }
+
+  /* Chat area */
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .msg {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .msg.user { align-items: flex-end; }
+  .msg.bot { align-items: flex-start; }
+
+  .bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    max-width: 80%;
+    word-wrap: break-word;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .msg.user .bubble {
+    background: #2c5282;
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.bot .bubble {
+    background: white;
+    color: #1a1a1a;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .msg.bot.error .bubble {
+    background: #fef2f2;
+    color: #991b1b;
+    border-left: 3px solid #ef4444;
+  }
+
+  /* Sources & metadata */
+  .meta {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 6px;
+    padding: 0 4px;
+  }
+  .sources {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    background: #f1f5f9;
+    border-radius: 6px;
+    max-width: 80%;
+  }
+  .sources strong { color: #475569; }
+  .sources ul { margin-top: 4px; padding-left: 20px; }
+  .sources li { color: #334155; margin-top: 2px; }
+
+  /* Loading indicator */
+  .loading {
+    display: inline-block;
+  }
+  .loading span {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin: 0 2px;
+    background: #94a3b8;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+  }
+  .loading span:nth-child(1) { animation-delay: -0.32s; }
+  .loading span:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+  }
+
+  /* Input area */
+  #input-area {
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    padding: 16px 24px;
+  }
+  #input-row {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    gap: 8px;
+  }
+  #q {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 24px;
+    font-size: 1rem;
+    outline: none;
+    transition: border 0.2s;
+  }
+  #q:focus { border-color: #2c5282; }
+  #q:disabled { background: #f1f5f9; cursor: not-allowed; }
+
+  button {
+    padding: 12px 24px;
+    background: #2c5282;
+    color: white;
+    border: none;
+    border-radius: 24px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  button:hover:not(:disabled) { background: #1e3a5f; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+  /* Welcome message */
+  .welcome {
+    text-align: center;
+    color: #64748b;
+    padding: 40px 20px;
+  }
+  .welcome h2 { font-size: 1.25rem; margin-bottom: 8px; color: #334155; }
+  .welcome p { font-size: 0.9rem; }
+  .suggestions {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  .suggestion {
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    font-size: 0.85rem;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .suggestion:hover {
+    background: #2c5282;
+    color: white;
+    border-color: #2c5282;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Veelead Helpdesk Bot</h1>
+  <div class="subtitle">Ask about HR, IT, Policies, or anything in the knowledge base</div>
+  <span class="status" id="status">checking…</span>
+</header>
+
+<div id="chat">
+  <div class="welcome" id="welcome">
+    <h2>👋 How can I help you today?</h2>
+    <p>Ask me anything about company policies, IT support, or HR.</p>
+    <div class="suggestions">
+      <div class="suggestion" onclick="askSuggestion(this)">How do I reset my password?</div>
+      <div class="suggestion" onclick="askSuggestion(this)">How many sick leaves do I have?</div>
+      <div class="suggestion" onclick="askSuggestion(this)">How do I raise a helpdesk ticket?</div>
+      <div class="suggestion" onclick="askSuggestion(this)">VPN not working after Windows update</div>
+    </div>
+  </div>
+</div>
+
+<div id="input-area">
+  <div id="input-row">
+    <input type="text" id="q" placeholder="Type your question…" autofocus>
+    <button id="send" onclick="sendQuestion()">Send</button>
+  </div>
+</div>
+
+<script>
+  // ════════════════════════════════════════════════════════
+  //  CONFIGURATION — change these to point to your bot
+  // ════════════════════════════════════════════════════════
+
+  const API_URL = "http://localhost:8000/search.json";   // Bot endpoint
+  const API_KEY = "veelead-secure-9f83jsdf9832@";  // x-api-key header
+
+  // After deploying to Azure App Service, change API_URL to:
+  // const API_URL = "https://veelead-helpdesk-bot.azurewebsites.net/search.json";
+
+  // ════════════════════════════════════════════════════════
+
+  const chatEl    = document.getElementById("chat");
+  const inputEl   = document.getElementById("q");
+  const sendBtn   = document.getElementById("send");
+  const welcomeEl = document.getElementById("welcome");
+  const statusEl  = document.getElementById("status");
+
+  // Enter key submits
+  inputEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendQuestion();
+    }
+  });
+
+  // Check bot health on page load
+  checkHealth();
+
+  async function checkHealth() {
+    try {
+      const healthUrl = API_URL.replace("/search.json", "/health");
+      const r = await fetch(healthUrl);
+      if (r.ok) {
+        const data = await r.json();
+        statusEl.textContent = `● connected (${data.indexed_files ?? "?"} files)`;
+        statusEl.classList.add("ok");
+      } else {
+        statusEl.textContent = "● bot reachable but error";
+        statusEl.classList.add("err");
+      }
+    } catch (err) {
+      statusEl.textContent = "● bot offline";
+      statusEl.classList.add("err");
+    }
+  }
+
+  function askSuggestion(el) {
+    inputEl.value = el.textContent;
+    sendQuestion();
+  }
+
+  function addUserMessage(text) {
+    if (welcomeEl) welcomeEl.remove();
+    const div = document.createElement("div");
+    div.className = "msg user";
+    div.innerHTML = `<div class="bubble"></div>`;
+    div.querySelector(".bubble").textContent = text;
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addLoadingMessage() {
+    const div = document.createElement("div");
+    div.className = "msg bot";
+    div.id = "loading-msg";
+    div.innerHTML = `
+      <div class="bubble">
+        <div class="loading"><span></span><span></span><span></span></div>
+      </div>`;
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function removeLoadingMessage() {
+    const loading = document.getElementById("loading-msg");
+    if (loading) loading.remove();
+  }
+
+  function addBotMessage(data) {
+    const div = document.createElement("div");
+    div.className = "msg bot";
+
+    // Main answer bubble
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = data.answer || "No answer returned.";
+    div.appendChild(bubble);
+
+    // Metadata (small text below)
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const parts = [];
+    if (data.model_used) parts.push(`model: ${data.model_used}`);
+    if (data.cached) parts.push("cached");
+    if (data.numFound !== undefined) parts.push(`${data.numFound} chunk(s) used`);
+    meta.textContent = parts.join(" · ");
+    div.appendChild(meta);
+
+    // Sources list
+    if (data.sources && data.sources.length > 0) {
+      const src = document.createElement("div");
+      src.className = "sources";
+      src.innerHTML = `<strong>Sources:</strong><ul>${
+        data.sources.map(s => `<li>${escapeHtml(s)}</li>`).join("")
+      }</ul>`;
+      div.appendChild(src);
+    }
+
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addErrorMessage(text) {
+    const div = document.createElement("div");
+    div.className = "msg bot error";
+    div.innerHTML = `<div class="bubble"></div>`;
+    div.querySelector(".bubble").textContent = "⚠ " + text;
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  async function sendQuestion() {
+    const q = inputEl.value.trim();
+    if (!q) return;
+
+    addUserMessage(q);
+    inputEl.value = "";
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+    addLoadingMessage();
+
+    try {
+      const url = `${API_URL}?q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "x-api-key": API_KEY }
+      });
+
+      removeLoadingMessage();
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        addErrorMessage(`HTTP ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+
+      const data = await res.json();
+      addBotMessage(data);
+    } catch (err) {
+      removeLoadingMessage();
+      addErrorMessage(
+        `Could not reach the bot. Check that:\n` +
+        `  1. The bot is running\n` +
+        `  2. API_URL is correct: ${API_URL}\n` +
+        `  3. CORS is enabled on the bot\n\n` +
+        `Error: ${err.message}`
+      );
+    } finally {
+      inputEl.disabled = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+</script>
+
+</body>
+</html>
