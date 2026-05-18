@@ -1667,6 +1667,19 @@ CAPABILITY_RE = re.compile(
     r"can you help with hr or it questions|what do you do|tell me what you can do)\b[\s!.?]*$",
     re.I,
 )
+SUMMARY_REQUEST_RE = re.compile(
+    r"^\s*(hr policy|it policy|facilities policy|general policy|"
+    r"tell me about (hr|it|facilities|general)( policy)?|"
+    r"what does (the )?(hr|it|facilities|general) policy (cover|contain|include)|"
+    r"what is (the )?(hr|it|facilities|general) policy)\b[\s!.?]*$",
+    re.I,
+)
+ACTION_REQUEST_RE = re.compile(
+    r"^\s*(how do i|how can i|can i|can you|what should i do|"
+    r"leave balance|not working|problem|issue|error|stuck|reset|update|"
+    r"carry forward|how to)\b",
+    re.I,
+)
 
 
 def pick_chat_model(question: str) -> str:
@@ -1683,6 +1696,30 @@ def is_small_talk(question: str) -> bool:
         bool(SMALL_TALK_RE.match(q))
         or bool(CAPABILITY_RE.match(q))
         or q in {"hi", "hello", "hey", "yo"}
+    )
+
+
+def is_summary_request(question: str) -> bool:
+    """Detect broad document-level questions that should get a summary."""
+    q = question.strip().lower()
+    return bool(SUMMARY_REQUEST_RE.match(q)) or (
+        "policy" in q and len(q.split()) <= 5
+    )
+
+
+def is_action_request(question: str) -> bool:
+    """Detect how-to, troubleshooting, and resolution-seeking questions."""
+    q = question.strip().lower()
+    return bool(ACTION_REQUEST_RE.match(q)) or any(
+        token in q
+        for token in [
+            " not updated",
+            " not working",
+            " issue",
+            " problem",
+            " error",
+            " help",
+        ]
     )
 
 
@@ -1927,9 +1964,17 @@ Rules:
   "I could not find that in the available documents. Please check with your helpdesk or rephrase your question."
 - Keep "suggested_followups" to 2-3 short, specific questions related to the topic.
 - Do not include the document filename or source in the answer text — that goes separately.
+- If QUESTION_FOCUS is "summary", answer at a document-summary level instead of a narrow clause-level answer.
+- For summary questions like "HR policy", describe what the document covers using the retrieved context.
+- Prefer a concise overview of the main topics, sections, or rules visible in the context.
+- If QUESTION_FOCUS is "steps", start with a short friendly line such as "I found a solution!" and then present the answer as a few bullet points or numbered steps.
+- For troubleshooting or how-to questions, favor practical steps, checks, and next actions over long paragraphs.
 
 DOCUMENT CONTEXT:
-{context}"""
+{context}
+
+QUESTION_FOCUS:
+{question_focus}"""
 
 
 def compute_confidence(chunks: List[Dict[str, Any]]) -> float:
@@ -1984,7 +2029,16 @@ def generate_answer_and_followups(
         )
     context = "\n\n---\n\n".join(context_parts)
 
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context)
+    if is_summary_request(question):
+        question_focus = "summary"
+    elif is_action_request(question):
+        question_focus = "steps"
+    else:
+        question_focus = "specific"
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        context=context,
+        question_focus=question_focus,
+    )
     model = pick_chat_model(question)
 
     try:
