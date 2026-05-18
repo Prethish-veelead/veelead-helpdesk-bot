@@ -1,0 +1,23 @@
+C:\Users\PrethishGA\AppData\Local\Programs\Python\Python311\Lib\site-packages\pydantic\_internal\_fields.py:132: UserWarning: Field "model_used" in SearchResponse has conflict with protected namespace "model_".
+
+You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+  warnings.warn(
+INFO:     Started server process [23288]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "C:\Users\PrethishGA\AppData\Local\Programs\Python\Python311\Lib\site-packages\starlette\routing.py", line 693, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "C:\Users\PrethishGA\AppData\Local\Programs\Python\Python311\Lib\site-packages\starlette\routing.py", line 569, in __aenter__
+    await self._router.startup()
+  File "C:\Users\PrethishGA\AppData\Local\Programs\Python\Python311\Lib\site-packages\starlette\routing.py", line 672, in startup
+    handler()
+  File "C:\Users\PrethishGA\Downloads\sharepointbot\Helpdisk\app.py", line 2105, in startup
+    print_config_summary()
+  File "C:\Users\PrethishGA\Downloads\sharepointbot\Helpdisk\config.py", line 195, in print_config_summary
+    print("\n" + "\u2550" * 60)
+  File "C:\Users\PrethishGA\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 2-61: character maps to <undefined>
+
+ERROR:    Application startup failed. Exiting.
