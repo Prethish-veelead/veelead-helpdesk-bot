@@ -2556,6 +2556,17 @@ COMPLEX_QUERY_RE = re.compile(
     r"\b(compare|difference|versus|vs|analy[sz]e|summari[sz]e|"
     r"explain why|step.by.step|multi(ple)?|across|between)\b", re.I
 )
+SUMMARY_QUERY_RE = re.compile(r"\b(summar(?:y|ize|ise)|overview|cover(?:s|ed)?|what does)\b", re.I)
+SMALL_TALK_RE = re.compile(
+    r"^\s*(hi+|hello+|hey+|good\s+(morning|afternoon|evening)|"
+    r"thanks|thank\s+you|how are you|what'?s up|yo)\s*[!.?]*\s*$",
+    re.I,
+)
+CAPABILITY_RE = re.compile(
+    r"^\s*(can you help me|help|anyone there|i have (?:a )?doubt|"
+    r"one doubts?|i need help)\s*[!.?]*\s*$",
+    re.I,
+)
 
 
 def pick_chat_model(question: str) -> str:
@@ -2563,6 +2574,64 @@ def pick_chat_model(question: str) -> str:
     if len(question.split()) > 30 or COMPLEX_QUERY_RE.search(question):
         return settings.gpt_large_deploy
     return settings.gpt_mini_deploy
+
+
+def is_small_talk(question: str) -> bool:
+    """Detect greetings and simple capability/help prompts."""
+    q = question.strip().lower()
+    return bool(SMALL_TALK_RE.match(q) or CAPABILITY_RE.match(q) or q in {"hi", "hello", "hey", "yo"})
+
+
+def generate_small_talk_response(question: str) -> tuple[str, str]:
+    """Return a short friendly response without running document search."""
+    q = question.strip().lower()
+    if q in {"hi", "hello", "hey", "yo"} or SMALL_TALK_RE.match(q):
+        return ("Hello! How can I help you today?", "small_talk")
+    return (
+        "Sure, I can help. Please share your IT, HR, Facilities, or policy-related question.",
+        "small_talk",
+    )
+
+
+def wants_combined_it_hr_summary(question: str) -> bool:
+    """Detect summary-style questions that explicitly mention both IT and HR."""
+    q = question.lower()
+    has_it = re.search(r"\bit\b", q) is not None
+    has_hr = re.search(r"\bhr\b", q) is not None
+    return has_it and has_hr and bool(SUMMARY_QUERY_RE.search(q))
+
+
+def _unique_source_labels(top_chunks: List[Dict[str, Any]], limit: int = 2) -> List[str]:
+    labels: List[str] = []
+    seen = set()
+    for c in top_chunks:
+        label = c.get("filename") or c.get("article_title")
+        if label and label not in seen:
+            seen.add(label)
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return labels
+
+
+def _format_answer_with_intro_and_source(
+    answer: str,
+    top_chunks: List[Dict[str, Any]],
+) -> str:
+    """Normalize the final answer style for short helpdesk responses."""
+    cleaned = (answer or "").strip()
+    if not cleaned:
+        return cleaned
+
+    lower = cleaned.lower()
+    if not lower.startswith("i could not find") and not lower.startswith("sorry"):
+        if not lower.startswith("i found a solution!"):
+            cleaned = f"I found a solution!\n\n{cleaned}"
+
+    source_labels = _unique_source_labels(top_chunks)
+    if source_labels and "source:" not in cleaned.lower():
+        cleaned = f"{cleaned}\n\n(Source: {', '.join(source_labels)})"
+    return cleaned
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2776,6 +2845,9 @@ Rules:
 - Use only information from the context below. Never invent facts.
 - If the context doesn't contain the answer, set "answer" to:
   "I could not find that in the available documents. Please check with your helpdesk or rephrase your question."
+- If the user asks for a summary of IT, HR, Facilities, or General documents, give a short document-based summary from the retrieved context.
+- When the answer contains multiple details, format them as 2-5 numbered points.
+- Start the answer in a friendly, human tone such as "I found a solution!" when the context supports an answer.
 - Keep "suggested_followups" to 2-3 short, specific questions related to the topic.
 - Do not include the document filename or source in the answer text — that goes separately.
 
@@ -2886,6 +2958,7 @@ def generate_answer_and_followups(
         followups = [str(f).strip() for f in followups if f][:3]
         if not answer:
             answer = "I could not find that in the available documents."
+        answer = _format_answer_with_intro_and_source(answer, top_chunks)
         return (answer, followups, model)
     except Exception as e:
         log.error(f"LLM call failed: {e}")
@@ -3114,6 +3187,27 @@ def search(
     if not question:
         raise HTTPException(status_code=400, detail="Query 'q' is required")
 
+    if is_small_talk(question):
+        answer, model_used = generate_small_talk_response(question)
+        return SearchResponse(
+            answer=answer,
+            confidence=0.15,
+            model_used=model_used,
+            cached=False,
+            numFound=0,
+            sources=[],
+            chunks=[],
+            suggested_followups=[
+                "What can you help me with today?",
+                "Can you help with IT or HR questions?",
+                "Do you want a policy summary?",
+            ],
+            q=question,
+            category_used="General",
+            category_source="small_talk",
+            category_confidence="high",
+        )
+
     # ── 1. Cache lookup ──
     cached_resp = cache.cache_lookup(question)
     if cached_resp:
@@ -3160,10 +3254,6 @@ def search(
         category_source = "ai_predicted"
         category_confidence = classification["confidence"]
 
-    # If category is Uncategorized, search WITHOUT category filter
-    # (Uncategorized is included automatically alongside any selected category)
-    search_category = None if used_category == "Uncategorized" else used_category
-
     # ── 3. Embed the query + hybrid search ──
     try:
         query_vec = embed_one(question)
@@ -3171,26 +3261,59 @@ def search(
         log.error(f"Query embedding failed: {e}")
         raise HTTPException(status_code=500, detail="Query embedding service unavailable")
 
-    chunks = search_index.hybrid_search(
-        query=question,
-        query_vector=query_vec,
-        top_k=settings.top_k_use,
-        category=search_category,
-        include_uncategorized=True,
-        only_published=True,
-    )
+    chunks: List[Dict[str, Any]] = []
 
-    # ── 4. Fallback: if no results and category was applied, retry without it ──
-    if not chunks and search_category:
-        log.info(f"  No results in {search_category}. Falling back to all categories.")
+    if wants_combined_it_hr_summary(question):
+        requested_categories = [c for c in ("IT", "HR") if c in all_categories]
+        per_category_k = max(3, settings.top_k_use // max(1, len(requested_categories)))
+        for cat in requested_categories:
+            cat_chunks = search_index.hybrid_search(
+                query=question,
+                query_vector=query_vec,
+                top_k=per_category_k,
+                category=cat,
+                include_uncategorized=False,
+                only_published=True,
+            )
+            chunks.extend(cat_chunks)
+
+        # De-duplicate by chunk_id when available, otherwise by filename+text prefix.
+        deduped: List[Dict[str, Any]] = []
+        seen_keys = set()
+        for c in chunks:
+            key = c.get("chunk_id") or f"{c.get('filename','')}::{c.get('text','')[:120]}"
+            if key not in seen_keys:
+                seen_keys.add(key)
+                deduped.append(c)
+        chunks = deduped
+        used_category = "IT + HR"
+        category_source = "multi_category"
+        category_confidence = "high"
+    else:
+        # If category is Uncategorized, search WITHOUT category filter
+        # (Uncategorized is included automatically alongside any selected category)
+        search_category = None if used_category == "Uncategorized" else used_category
+
         chunks = search_index.hybrid_search(
             query=question,
             query_vector=query_vec,
             top_k=settings.top_k_use,
-            category=None,
+            category=search_category,
+            include_uncategorized=True,
             only_published=True,
         )
-        category_source = "fallback_all"
+
+        # ── 4. Fallback: if no results and category was applied, retry without it ──
+        if not chunks and search_category:
+            log.info(f"  No results in {search_category}. Falling back to all categories.")
+            chunks = search_index.hybrid_search(
+                query=question,
+                query_vector=query_vec,
+                top_k=settings.top_k_use,
+                category=None,
+                only_published=True,
+            )
+            category_source = "fallback_all"
 
     # ── 5. Generate answer + follow-ups (single LLM call) ──
     answer, followups, model_used = generate_answer_and_followups(question, chunks)
