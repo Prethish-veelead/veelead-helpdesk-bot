@@ -4004,6 +4004,45 @@ def verify_api_key(x_api_key: Optional[str] = Header(None)) -> bool:
 # ═══════════════════════════════════════════════════════════
 #  STARTUP
 # ═══════════════════════════════════════════════════════════
+# @app.on_event("startup")
+# def startup():
+#     print_config_summary()
+#     log.info("═" * 60)
+#     log.info("  Veelead Helpdesk RAG Bot — starting")
+#     log.info("═" * 60)
+
+#     issues = settings.validate()
+#     if issues:
+#         log.warning("Configuration issues found:")
+#         for issue in issues:
+#             log.warning(f"  ⚠ {issue}")
+
+#     cache.init_db()
+
+#     try:
+#         search_index.ensure_index()
+#     except Exception as e:
+#         log.error(f"Could not connect to Azure AI Search: {e}")
+#         log.error("API will start but searches will fail until this is fixed.")
+
+#     if not cache.get_delta_token():
+#         log.info("No delta token found — running initial full sync...")
+#         try:
+#             run_sync(force_full=True)
+#         except Exception as e:
+#             log.exception("Initial sync failed (will retry on next scheduled run)")
+
+#     try:
+#         start_scheduler()
+#     except Exception as e:
+#         log.exception("Failed to start scheduler — background sync disabled")
+
+#     log.info("═" * 60)
+#     log.info("  ✅ API READY")
+#     log.info(f"  Endpoint: {settings.embed_endpoint}")
+#     log.info(f"  Source: {settings.source_type}")
+#     log.info("═" * 60)
+
 @app.on_event("startup")
 def startup():
     print_config_summary()
@@ -4025,12 +4064,16 @@ def startup():
         log.error(f"Could not connect to Azure AI Search: {e}")
         log.error("API will start but searches will fail until this is fixed.")
 
+    # ✅ Run sync in background — don't block startup
     if not cache.get_delta_token():
-        log.info("No delta token found — running initial full sync...")
-        try:
-            run_sync(force_full=True)
-        except Exception as e:
-            log.exception("Initial sync failed (will retry on next scheduled run)")
+        log.info("No delta token found — scheduling initial full sync in background...")
+        import threading
+        threading.Thread(
+            target=_background_sync,
+            args=(True,),
+            daemon=True,
+            name="initial-sync"
+        ).start()
 
     try:
         start_scheduler()
@@ -4044,6 +4087,13 @@ def startup():
     log.info("═" * 60)
 
 
+def _background_sync(force_full: bool = False):
+    """Wrapper for run_sync that catches all exceptions safely."""
+    try:
+        run_sync(force_full=force_full)
+    except Exception:
+        log.exception("Background sync failed")
+        
 @app.on_event("shutdown")
 def shutdown():
     log.info("Shutting down...")
