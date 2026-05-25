@@ -1777,6 +1777,831 @@
 </html> -->
 
 
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Veelead Helpdesk Bot</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f7fa;
+    color: #1a1a1a;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header {
+    background: #2c5282;
+    color: white;
+    padding: 16px 24px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  header .subtitle { font-size: 0.85rem; opacity: 0.85; margin-top: 2px; }
+  header .status {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+  }
+  header .status.ok { background: rgba(34,197,94,0.3); }
+  header .status.err { background: rgba(239,68,68,0.3); }
+
+  /* Category selection bar */
+  #category-bar {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .cat-label {
+    font-size: 0.85rem;
+    color: #475569;
+    font-weight: 500;
+  }
+  .cat-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .cat-btn {
+    padding: 5px 12px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    font-size: 0.82rem;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .cat-btn:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+  }
+  .cat-btn.active {
+    background: #2c5282;
+    color: white;
+    border-color: #2c5282;
+  }
+  .cat-btn .cat-count {
+    font-size: 0.7rem;
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+
+  /* Chat area */
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .msg {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .msg.user { align-items: flex-end; }
+  .msg.bot { align-items: flex-start; }
+
+  .bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    max-width: 80%;
+    word-wrap: break-word;
+    line-height: 1.55;
+    white-space: normal;  /* was pre-wrap — markdown handles line breaks now */
+  }
+  /* User messages keep plain whitespace handling */
+  .msg.user .bubble { white-space: pre-wrap; }
+
+  /* Markdown elements inside bot bubbles */
+  .msg.bot .bubble p { margin: 0 0 8px 0; }
+  .msg.bot .bubble p:last-child { margin-bottom: 0; }
+  .msg.bot .bubble strong { font-weight: 600; color: #0f172a; }
+  .msg.bot .bubble em { font-style: italic; color: #475569; }
+  .msg.bot .bubble ol,
+  .msg.bot .bubble ul {
+    margin: 6px 0 8px 0;
+    padding-left: 22px;
+  }
+  .msg.bot .bubble li { margin: 4px 0; }
+  .msg.bot .bubble li > p:first-child { margin-top: 0; }
+  .msg.bot .bubble li > p:last-child { margin-bottom: 0; }
+  .msg.bot .bubble code {
+    background: #f1f5f9;
+    color: #be185d;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  .msg.bot .bubble pre {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+  }
+  .msg.bot .bubble pre code {
+    background: none;
+    color: #0f172a;
+    padding: 0;
+  }
+  .msg.bot .bubble hr {
+    border: 0;
+    border-top: 1px solid #e2e8f0;
+    margin: 10px 0;
+  }
+  .msg.bot .bubble blockquote {
+    border-left: 3px solid #cbd5e1;
+    padding-left: 10px;
+    margin: 8px 0;
+    color: #475569;
+  }
+  .msg.bot .bubble h1,
+  .msg.bot .bubble h2,
+  .msg.bot .bubble h3,
+  .msg.bot .bubble h4 {
+    font-weight: 600;
+    margin: 10px 0 6px 0;
+    line-height: 1.3;
+  }
+  .msg.bot .bubble h1 { font-size: 1.15rem; }
+  .msg.bot .bubble h2 { font-size: 1.08rem; }
+  .msg.bot .bubble h3 { font-size: 1rem; }
+  .msg.bot .bubble h4 { font-size: 0.95rem; }
+  .msg.bot .bubble a {
+    color: #2c5282;
+    text-decoration: underline;
+  }
+  .msg.user .bubble {
+    background: #2c5282;
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.bot .bubble {
+    background: white;
+    color: #1a1a1a;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .msg.bot.error .bubble {
+    background: #fef2f2;
+    color: #991b1b;
+    border-left: 3px solid #ef4444;
+  }
+
+  /* Meta row: confidence + category + model */
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+    padding: 0 4px;
+    font-size: 0.75rem;
+    color: #64748b;
+    flex-wrap: wrap;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  .badge.high     { background: #dcfce7; color: #166534; }
+  .badge.moderate { background: #fef3c7; color: #92400e; }
+  .badge.low      { background: #fee2e2; color: #991b1b; }
+  .badge.cat      { background: #e0e7ff; color: #3730a3; }
+
+  /* Source chunks */
+  .sources-toggle {
+    margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 6px 12px;
+    color: #334155;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .sources-toggle:hover { background: #f8fafc; }
+  .sources-toggle .arrow { font-weight: 700; }
+  .chunks {
+    margin-top: 8px;
+    max-width: 80%;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .chunks.expanded { display: flex; }
+  .chunk {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #2c5282;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+  }
+  .chunk-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    color: #475569;
+    font-weight: 500;
+    gap: 8px;
+  }
+  .chunk-title { color: #1e3a5f; }
+  .chunk-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chunk-page {
+    font-size: 0.72rem;
+    color: #64748b;
+    background: white;
+    padding: 2px 6px;
+    border-radius: 8px;
+  }
+  .chunk-link, .chunk-toggle {
+    font-size: 0.72rem;
+    color: #0f172a;
+    background: white;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .chunk-link:hover, .chunk-toggle:hover { background: #e2e8f0; }
+  .chunk-text {
+    color: #334155;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-wrap;
+  }
+  .chunk-text.expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+  }
+
+  /* Follow-up chips */
+  .followups { margin-top: 12px; max-width: 80%; }
+  .followups-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-bottom: 6px;
+  }
+  .followup-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .followup-chip {
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    font-size: 0.8rem;
+    color: #475569;
+    cursor: pointer;
+  }
+  .followup-chip:hover {
+    background: #2c5282;
+    color: white;
+    border-color: #2c5282;
+  }
+
+  /* Loading indicator */
+  .loading { display: inline-block; }
+  .loading span {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin: 0 2px;
+    background: #94a3b8;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+  }
+  .loading span:nth-child(1) { animation-delay: -0.32s; }
+  .loading span:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+  }
+
+  /* Input */
+  #input-area {
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    padding: 16px 24px;
+  }
+  #input-row {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    gap: 8px;
+  }
+  #q {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 24px;
+    font-size: 1rem;
+    outline: none;
+  }
+  #q:focus { border-color: #2c5282; }
+  #q:disabled { background: #f1f5f9; cursor: not-allowed; }
+  button#send {
+    padding: 12px 24px;
+    background: #2c5282;
+    color: white;
+    border: none;
+    border-radius: 24px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button#send:hover:not(:disabled) { background: #1e3a5f; }
+  button#send:disabled { background: #94a3b8; cursor: not-allowed; }
+
+  /* Welcome */
+  .welcome {
+    text-align: center;
+    color: #64748b;
+    padding: 40px 20px;
+  }
+  .welcome h2 { font-size: 1.25rem; margin-bottom: 8px; color: #334155; }
+  .welcome p { font-size: 0.9rem; }
+  .suggestions {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  .suggestion {
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    font-size: 0.85rem;
+    color: #475569;
+    cursor: pointer;
+  }
+  .suggestion:hover {
+    background: #2c5282;
+    color: white;
+    border-color: #2c5282;
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@13.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Veelead Helpdesk Bot</h1>
+  <div class="subtitle">Ask about HR, IT, Policies, or anything in the knowledge base</div>
+  <span class="status" id="status">checking…</span>
+</header>
+
+<div id="category-bar">
+  <span class="cat-label">Filter by:</span>
+  <div class="cat-buttons" id="cat-buttons">
+    <button class="cat-btn active" data-cat="">All</button>
+    <span style="color:#94a3b8;font-size:0.8rem;">loading…</span>
+  </div>
+</div>
+
+<div id="chat">
+  <div class="welcome" id="welcome">
+    <h2>👋 How can I help you today?</h2>
+    <p>Ask me anything about company policies, IT support, or HR.</p>
+    <p style="margin-top:8px;font-size:0.85rem;">Tip: pick a category above to narrow down the search.</p>
+    <div class="suggestions">
+      <div class="suggestion" onclick="askSuggestion(this)">How do I reset my password?</div>
+      <div class="suggestion" onclick="askSuggestion(this)">How many sick leaves do I have?</div>
+      <div class="suggestion" onclick="askSuggestion(this)">How do I raise a helpdesk ticket?</div>
+      <div class="suggestion" onclick="askSuggestion(this)">VPN not working after Windows update</div>
+    </div>
+  </div>
+</div>
+
+<div id="input-area">
+  <div id="input-row">
+    <input type="text" id="q" placeholder="Type your question…" autofocus>
+    <button id="send" onclick="sendQuestion()">Send</button>
+  </div>
+</div>
+
+<script>
+  // ════════════════════════════════════════════════════════
+  //  CONFIGURATION
+  // ════════════════════════════════════════════════════════
+  const API_BASE = "https://veelead-helpdesk-bot-bagsakfcf2aeh7ag.southeastasia-01.azurewebsites.net";   // change for production
+  const API_KEY  = "veelead-secure-9f83jsdf9832@";
+
+  const SEARCH_URL     = `${API_BASE}/search.json`;
+  const CATEGORIES_URL = `${API_BASE}/categories`;
+  const HEALTH_URL     = `${API_BASE}/health`;
+
+  // ════════════════════════════════════════════════════════
+
+  const chatEl     = document.getElementById("chat");
+  const inputEl    = document.getElementById("q");
+  const sendBtn    = document.getElementById("send");
+  const welcomeEl  = document.getElementById("welcome");
+  const statusEl   = document.getElementById("status");
+  const catBtnsEl  = document.getElementById("cat-buttons");
+
+  let selectedCategory = "";  // empty = no filter (all categories)
+
+  inputEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendQuestion();
+    }
+  });
+
+  checkHealth();
+  loadCategories();
+
+  async function checkHealth() {
+    try {
+      const r = await fetch(HEALTH_URL);
+      if (r.ok) {
+        const data = await r.json();
+        const count = data.index?.document_count ?? "?";
+        statusEl.textContent = `● connected (${count} chunks indexed)`;
+        statusEl.classList.add("ok");
+      } else {
+        statusEl.textContent = "● bot reachable but error";
+        statusEl.classList.add("err");
+      }
+    } catch {
+      statusEl.textContent = "● bot offline";
+      statusEl.classList.add("err");
+    }
+  }
+
+  async function loadCategories() {
+    try {
+      const r = await fetch(CATEGORIES_URL, {
+        headers: { "x-api-key": API_KEY }
+      });
+      if (!r.ok) {
+        catBtnsEl.innerHTML = '<button class="cat-btn active" data-cat="">All</button>';
+        return;
+      }
+      const data = await r.json();
+      const cats = data.categories || [];
+
+      // Build button bar: "All" + each category
+      catBtnsEl.innerHTML = '';
+      const allBtn = document.createElement("button");
+      allBtn.className = "cat-btn active";
+      allBtn.dataset.cat = "";
+      allBtn.textContent = "All";
+      allBtn.onclick = () => selectCategory("", allBtn);
+      catBtnsEl.appendChild(allBtn);
+
+      cats.forEach(c => {
+        // Skip "Uncategorized" and the default fallback names from clogging UI
+        if (c.name === "Uncategorized" || c.chunk_count === 0) return;
+        const btn = document.createElement("button");
+        btn.className = "cat-btn";
+        btn.dataset.cat = c.name;
+        btn.innerHTML = `${escapeHtml(c.display || c.name)} <span class="cat-count">(${c.chunk_count})</span>`;
+        btn.onclick = () => selectCategory(c.name, btn);
+        catBtnsEl.appendChild(btn);
+      });
+    } catch (err) {
+      catBtnsEl.innerHTML = '<button class="cat-btn active" data-cat="">All</button>';
+    }
+  }
+
+  function selectCategory(cat, btn) {
+    selectedCategory = cat;
+    document.querySelectorAll(".cat-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+  }
+
+  function askSuggestion(el) {
+    inputEl.value = el.textContent;
+    sendQuestion();
+  }
+
+  function addUserMessage(text) {
+    if (welcomeEl) welcomeEl.remove();
+    const div = document.createElement("div");
+    div.className = "msg user";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+    div.appendChild(bubble);
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addLoadingMessage() {
+    const div = document.createElement("div");
+    div.className = "msg bot";
+    div.id = "loading-msg";
+    div.innerHTML = `<div class="bubble"><div class="loading"><span></span><span></span><span></span></div></div>`;
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function removeLoadingMessage() {
+    const el = document.getElementById("loading-msg");
+    if (el) el.remove();
+  }
+
+  function confClass(c) {
+    if (c >= 0.75) return "high";
+    if (c >= 0.50) return "moderate";
+    return "low";
+  }
+  function confLabel(c) {
+    if (c >= 0.75) return "High";
+    if (c >= 0.50) return "Moderate";
+    return "Low";
+  }
+
+  function addBotMessage(data) {
+    const div = document.createElement("div");
+    div.className = "msg bot";
+
+    // Main answer bubble (rendered as markdown, sanitised)
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML = renderMarkdown(data.answer || "No answer returned.");
+    div.appendChild(bubble);
+
+    // Meta row
+    const meta = document.createElement("div");
+    meta.className = "meta-row";
+
+    if (typeof data.confidence === "number") {
+      const conf = document.createElement("span");
+      conf.className = `badge ${confClass(data.confidence)}`;
+      conf.textContent = `${confLabel(data.confidence)} · ${(data.confidence * 100).toFixed(0)}%`;
+      meta.appendChild(conf);
+    }
+    if (data.category_used && data.category_used !== "Uncategorized") {
+      const catBadge = document.createElement("span");
+      catBadge.className = "badge cat";
+      const src = data.category_source === "ai_predicted" ? "auto" :
+                  data.category_source === "fallback_all" ? "fallback" :
+                  data.category_source === "user_selected" ? "selected" : "";
+      catBadge.textContent = `${data.category_used}${src ? ' (' + src + ')' : ''}`;
+      meta.appendChild(catBadge);
+    }
+    if (data.model_used && data.model_used !== "none") {
+      const m = document.createElement("span");
+      m.textContent = data.model_used;
+      meta.appendChild(m);
+    }
+    if (data.cached) {
+      const c = document.createElement("span");
+      c.textContent = "cached";
+      meta.appendChild(c);
+    }
+    if (typeof data.numFound === "number") {
+      const n = document.createElement("span");
+      n.textContent = `${data.numFound} chunk(s)`;
+      meta.appendChild(n);
+    }
+    div.appendChild(meta);
+
+    // Source chunks (collapsible)
+    if (Array.isArray(data.chunks) && data.chunks.length > 0) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "sources-toggle";
+      toggle.innerHTML = `<span class="arrow">▶</span> <span class="label">View ${data.chunks.length} source chunks</span>`;
+
+      const wrap = document.createElement("div");
+      wrap.className = "chunks";
+
+      data.chunks.forEach(c => {
+        const card = document.createElement("div");
+        card.className = "chunk";
+
+        const header = document.createElement("div");
+        header.className = "chunk-header";
+
+        const title = document.createElement("span");
+        title.className = "chunk-title";
+        title.textContent = c.article_title || c.filename || "Source";
+        header.appendChild(title);
+
+        const actions = document.createElement("div");
+        actions.className = "chunk-actions";
+
+        if (c.page) {
+          const pg = document.createElement("span");
+          pg.className = "chunk-page";
+          pg.textContent = `Page ${c.page}`;
+          actions.appendChild(pg);
+        }
+        if (c.pdf_url && !c.pdf_url.startsWith("file://")) {
+          const link = document.createElement("a");
+          link.className = "chunk-link";
+          link.href = c.pdf_url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "Open file";
+          actions.appendChild(link);
+        }
+        const tBtn = document.createElement("button");
+        tBtn.type = "button";
+        tBtn.className = "chunk-toggle";
+        tBtn.textContent = "Show text";
+        actions.appendChild(tBtn);
+        header.appendChild(actions);
+
+        const text = document.createElement("div");
+        text.className = "chunk-text";
+        text.textContent = c.text;
+
+        tBtn.onclick = () => {
+          const exp = text.classList.toggle("expanded");
+          tBtn.textContent = exp ? "Hide text" : "Show text";
+        };
+
+        card.appendChild(header);
+        card.appendChild(text);
+        wrap.appendChild(card);
+      });
+
+      toggle.onclick = () => {
+        const exp = wrap.classList.toggle("expanded");
+        toggle.querySelector(".arrow").textContent = exp ? "▼" : "▶";
+        toggle.querySelector(".label").textContent = exp
+          ? `Hide ${data.chunks.length} source chunks`
+          : `View ${data.chunks.length} source chunks`;
+      };
+
+      div.appendChild(toggle);
+      div.appendChild(wrap);
+    }
+
+    // Follow-up suggestion chips
+    if (Array.isArray(data.suggested_followups) && data.suggested_followups.length > 0) {
+      const fu = document.createElement("div");
+      fu.className = "followups";
+      const label = document.createElement("div");
+      label.className = "followups-label";
+      label.textContent = "You might also ask:";
+      fu.appendChild(label);
+      const chips = document.createElement("div");
+      chips.className = "followup-chips";
+      data.suggested_followups.forEach(q => {
+        const chip = document.createElement("div");
+        chip.className = "followup-chip";
+        chip.textContent = q;
+        chip.onclick = () => {
+          inputEl.value = q;
+          sendQuestion();
+        };
+        chips.appendChild(chip);
+      });
+      fu.appendChild(chips);
+      div.appendChild(fu);
+    }
+
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addErrorMessage(text) {
+    const div = document.createElement("div");
+    div.className = "msg bot error";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = "⚠ " + text;
+    div.appendChild(bubble);
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function scrollToBottom() {
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // Configure marked once: line breaks honoured, GitHub-flavoured markdown on
+  if (window.marked) {
+    marked.setOptions({
+      breaks: true,      // single newline → <br>
+      gfm: true,         // tables, strikethrough, task lists
+      headerIds: false,  // we don't need anchors
+      mangle: false,
+    });
+  }
+
+  /**
+   * Convert markdown text into sanitised HTML for rendering inside a bot bubble.
+   * Falls back to escaped plain text if marked/DOMPurify are unavailable
+   * (e.g. CDN blocked). Always safe — never trusts raw HTML.
+   */
+  function renderMarkdown(text) {
+    if (!text) return "";
+    if (!window.marked || !window.DOMPurify) {
+      // Graceful fallback: show as plain text with line breaks preserved
+      return escapeHtml(text).replace(/\n/g, "<br>");
+    }
+    try {
+      const rawHtml = marked.parse(text);
+      return DOMPurify.sanitize(rawHtml, {
+        ALLOWED_TAGS: [
+          "p", "br", "strong", "em", "u", "s", "code", "pre",
+          "ul", "ol", "li", "blockquote", "hr",
+          "h1", "h2", "h3", "h4", "h5", "h6",
+          "a", "table", "thead", "tbody", "tr", "th", "td",
+          "del", "ins"
+        ],
+        ALLOWED_ATTR: ["href", "title"],
+      });
+    } catch (e) {
+      console.warn("Markdown render failed, falling back to plain text:", e);
+      return escapeHtml(text).replace(/\n/g, "<br>");
+    }
+  }
+
+  async function sendQuestion() {
+    const q = inputEl.value.trim();
+    if (!q) return;
+
+    addUserMessage(q);
+    inputEl.value = "";
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+    addLoadingMessage();
+
+    try {
+      let url = `${SEARCH_URL}?q=${encodeURIComponent(q)}`;
+      if (selectedCategory) {
+        url += `&category=${encodeURIComponent(selectedCategory)}`;
+      }
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "x-api-key": API_KEY }
+      });
+
+      removeLoadingMessage();
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        addErrorMessage(`HTTP ${res.status}: ${text || res.statusText}`);
+        return;
+      }
+
+      const data = await res.json();
+      addBotMessage(data);
+    } catch (err) {
+      removeLoadingMessage();
+      addErrorMessage(
+        `Could not reach the bot.\n` +
+        `  API URL: ${SEARCH_URL}\n` +
+        `  Error: ${err.message}`
+      );
+    } finally {
+      inputEl.disabled = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+</script>
+
+</body>
+</html> -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2556,6 +3381,25 @@
     }
   }
 
+  // ───────────────────────────────────────────────────────────
+  // CONVERSATION MEMORY (browser-side, clears on tab close)
+  //
+  // We keep up to MAX_HISTORY user questions in-memory so the backend
+  // can resolve follow-ups like "where can I apply?" using context.
+  // History is sent only to /search.json as repeated `previous` query
+  // params; nothing is stored in localStorage / cookies / SQLite.
+  // ───────────────────────────────────────────────────────────
+  const MAX_HISTORY = 5;
+  const conversationHistory = [];
+
+  function pushHistory(question) {
+    if (!question) return;
+    conversationHistory.push(question);
+    while (conversationHistory.length > MAX_HISTORY) {
+      conversationHistory.shift();
+    }
+  }
+
   async function sendQuestion() {
     const q = inputEl.value.trim();
     if (!q) return;
@@ -2567,10 +3411,18 @@
     addLoadingMessage();
 
     try {
-      let url = `${SEARCH_URL}?q=${encodeURIComponent(q)}`;
+      const params = new URLSearchParams();
+      params.set("q", q);
       if (selectedCategory) {
-        url += `&category=${encodeURIComponent(selectedCategory)}`;
+        params.set("category", selectedCategory);
       }
+      // Send previous user questions (oldest first) so backend can
+      // disambiguate follow-ups. Each appears as a repeated `previous=`.
+      for (const prev of conversationHistory) {
+        params.append("previous", prev);
+      }
+      const url = `${SEARCH_URL}?${params.toString()}`;
+
       const res = await fetch(url, {
         method: "GET",
         headers: { "x-api-key": API_KEY }
@@ -2586,6 +3438,10 @@
 
       const data = await res.json();
       addBotMessage(data);
+
+      // Only record the question in history once we successfully got an
+      // answer. Failed requests don't pollute the context.
+      pushHistory(q);
     } catch (err) {
       removeLoadingMessage();
       addErrorMessage(
