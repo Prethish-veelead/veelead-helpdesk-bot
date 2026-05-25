@@ -4886,7 +4886,84 @@ If the problem returns, raise a ticket through the IT portal with the error code
 DOCUMENT CONTEXT
 ═══════════════════════════════════════════════════════════
 
-{context}"""
+{context}
+
+CONVERSATION CONTEXT
+═══════════════════════════════════════════════════════════════════════
+
+Previous question: {previous_question}
+
+FOLLOW-UP RULES
+═══════════════════════════════════════════════════════════════════════
+
+- Return exactly 2 items in "suggested_followups".
+- If a previous question is provided, make the follow-ups continue that thread.
+- Avoid repeating the current question or using generic filler like "Anything else?".
+"""
+
+
+def _build_followup_fallbacks(
+    question: str,
+    previous_question: Optional[str],
+    top_chunks: List[Dict[str, Any]],
+) -> List[str]:
+    """Generate safe follow-up questions when the model returns too few."""
+    topic = "this issue"
+    if top_chunks:
+        topic = (
+            top_chunks[0].get("article_title")
+            or top_chunks[0].get("category")
+            or top_chunks[0].get("sub_category")
+            or topic
+        )
+
+    topic = str(topic).strip() or "this issue"
+    previous_topic = str(previous_question).strip() if previous_question else ""
+
+    if previous_topic:
+        return [
+            f"How does this relate to your earlier question about {previous_topic}?",
+            f"What is the next step for {topic}?",
+        ]
+
+    return [
+        f"What is the next step for {topic}?",
+        f"Do you want troubleshooting or escalation details for this issue?",
+    ]
+
+
+def _normalize_followups(
+    raw_followups: Any,
+    question: str,
+    previous_question: Optional[str],
+    top_chunks: List[Dict[str, Any]],
+) -> List[str]:
+    """Keep follow-ups clean, unique, and capped at exactly two items."""
+    cleaned: List[str] = []
+    seen = set()
+
+    if isinstance(raw_followups, list):
+        for item in raw_followups:
+            text = str(item).strip()
+            key = text.lower()
+            if not text or key in seen:
+                continue
+            if text.lower() == question.strip().lower():
+                continue
+            cleaned.append(text)
+            seen.add(key)
+            if len(cleaned) >= 2:
+                break
+
+    for fallback in _build_followup_fallbacks(question, previous_question, top_chunks):
+        if len(cleaned) >= 2:
+            break
+        key = fallback.lower()
+        if key not in seen:
+            cleaned.append(fallback)
+            seen.add(key)
+
+    return cleaned[:2]
 
 
 def compute_confidence(chunks: List[Dict[str, Any]]) -> float:
@@ -4934,14 +5011,19 @@ def compute_confidence(chunks: List[Dict[str, Any]]) -> float:
 
 def generate_answer_and_followups(
     question: str,
-    top_chunks: List[Dict[str, Any]]
+    top_chunks: List[Dict[str, Any]],
+    previous_question: Optional[str] = None,
 ) -> tuple[str, List[str], str]:
     """
-    Call the LLM ONCE to produce both the answer text and 2-3 follow-up suggestions.
+    Call the LLM ONCE to produce both the answer text and 2 follow-up suggestions.
     Returns (answer_text, followups_list, model_used).
     """
     if not top_chunks:
-        return (NO_ANSWER_RESPONSE, [], "none")
+        return (
+            NO_ANSWER_RESPONSE,
+            _build_followup_fallbacks(question, previous_question, top_chunks),
+            "none",
+        )
 
     # Build context block
     context_parts = []
@@ -4953,7 +5035,10 @@ def generate_answer_and_followups(
         )
     context = "\n\n---\n\n".join(context_parts)
 
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        context=context,
+        previous_question=previous_question or "None",
+    )
     model = pick_chat_model(question)
 
     try:
@@ -4973,10 +5058,12 @@ def generate_answer_and_followups(
         import json as _json
         parsed = _json.loads(content)
         answer = (parsed.get("answer") or "").strip()
-        followups = parsed.get("suggested_followups") or []
-        if not isinstance(followups, list):
-            followups = []
-        followups = [str(f).strip() for f in followups if f][:3]
+        followups = _normalize_followups(
+            parsed.get("suggested_followups"),
+            question,
+            previous_question,
+            top_chunks,
+        )
         if not answer:
             answer = NO_ANSWER_RESPONSE
         # Final cleanup — replaces no-answer text with standard phrase
@@ -5200,6 +5287,10 @@ def categories(_auth: bool = Depends(verify_api_key)):
 @app.get("/search.json", response_model=SearchResponse)
 def search(
     q: str = Query(..., description="User question", min_length=1),
+    previous_q: Optional[str] = Query(
+        None,
+        description="Previous user question used to shape follow-up suggestions"
+    ),
     category: Optional[str] = Query(
         None,
         description="Optional category selected by user (HR, IT, Facilities, General)"
@@ -5224,7 +5315,6 @@ def search(
             suggested_followups=[
                 "How do I apply for leave?",
                 "What should I do if my laptop crashes?",
-                "How do I claim a reimbursement?",
             ],
             q=question,
             category_used="General",
@@ -5233,7 +5323,9 @@ def search(
         )
 
     # ── 1. Cache lookup ──
-    cached_resp = cache.cache_lookup(question)
+    # When previous_q is supplied, follow-ups depend on conversation context,
+    # so we bypass the question-only cache to avoid stale suggestions.
+    cached_resp = None if previous_q else cache.cache_lookup(question)
     if cached_resp:
         required_new = {"confidence", "chunks", "suggested_followups"}
         if all(k in cached_resp for k in required_new):
@@ -5332,7 +5424,11 @@ def search(
             category_source = "fallback_all"
 
     # ── 5. Generate answer + follow-ups (single LLM call) ──
-    answer, followups, model_used = generate_answer_and_followups(question, chunks)
+    answer, followups, model_used = generate_answer_and_followups(
+        question,
+        chunks,
+        previous_question=previous_q,
+    )
 
     # ── 6. Compute confidence from chunk scores ──
     confidence = compute_confidence(chunks) if chunks else 0.0
@@ -5386,7 +5482,7 @@ def search(
     )
 
     # ── 8. Cache the response (skip caching "no answer" responses) ──
-    if not _is_no_answer(answer):
+    if not _is_no_answer(answer) and not previous_q:
         cache.cache_store(question, response.model_dump())
 
     return response
