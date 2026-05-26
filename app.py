@@ -10096,7 +10096,7 @@ TONE
 OUTPUT FORMAT
 
 Return ONLY JSON:
-{
+{{
   "subject": "Short title in 3-8 words",
   "description": "1-2 sentence factual third-person summary",
   "answer": "Final answer text",
@@ -10105,7 +10105,7 @@ Return ONLY JSON:
     "Follow-up question 2",
     "Follow-up question 3"
   ]
-}
+}}
 
 DOCUMENT CONTEXT
 {context}"""
