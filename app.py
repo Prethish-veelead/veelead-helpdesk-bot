@@ -9395,6 +9395,56 @@ def wants_combined_it_hr_summary(question: str) -> bool:
     return has_it and has_hr and bool(SUMMARY_QUERY_RE.search(q))
 
 
+def infer_sub_category(question: str, category: Optional[str]) -> Optional[str]:
+    """Infer a sub-category hint from the query for tighter retrieval."""
+    q = (question or "").lower()
+    if not q:
+        return None
+
+    if category in ("HR", "Payroll", "General", None):
+        if any(k in q for k in ("salary", "payroll", "payslip", "bonus", "advance", "compensation", "ctc", "increment")):
+            return "Payroll"
+        if any(k in q for k in ("leave", "vacation", "pto", "sick", "casual leave", "earned leave", "maternity", "paternity")):
+            return "Leave"
+        if any(k in q for k in ("reimburse", "expense claim", "receipt", "bill", "travel claim")):
+            return "Reimbursement"
+
+    if category == "IT":
+        if any(k in q for k in ("vpn", "remote work", "work from home")):
+            return "VPN"
+        if any(k in q for k in ("password", "mfa", "reset", "login")):
+            return "Access"
+
+    return None
+
+
+def boost_chunks_by_doc_priority(question: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Prefer strongly matching policy documents for high-intent topics like payroll."""
+    if not chunks:
+        return chunks
+
+    q = (question or "").lower()
+    salary_intent = any(k in q for k in ("salary", "advance", "payroll", "compensation", "payslip", "bonus"))
+    if not salary_intent:
+        return chunks
+
+    preferred_markers = (
+        "compensation_salary_master_policy",
+        "compensation & salary master policy",
+        "compensation and salary master policy",
+        "payroll faq quick reference",
+    )
+
+    def _priority(c: Dict[str, Any]) -> tuple:
+        filename = (c.get("filename") or "").lower()
+        title = (c.get("article_title") or "").lower()
+        is_preferred = any(m in filename or m in title for m in preferred_markers)
+        score = float(c.get("score", 0))
+        return (1 if is_preferred else 0, score)
+
+    return sorted(chunks, key=_priority, reverse=True)
+
+
 def _is_no_answer(answer: str) -> bool:
     """True if the answer indicates the bot couldn't find content."""
     if not answer:
@@ -9997,6 +10047,69 @@ DOCUMENT CONTEXT
 
 {context}"""
 
+FEW_SHOT_PROMPT_TEMPLATE = """You are a Veelead Solutions HR & IT Helpdesk assistant. You answer employee
+questions strictly using the knowledge documents provided.
+
+KNOWLEDGE BASE - DOCUMENT MAP
+
+Route questions to the correct document before answering:
+
+HR        -> Leave & Time-Off Master Policy
+            Performance Management Policy
+            Recruitment & Onboarding Policy
+            HR FAQ Quick Reference
+
+IT        -> IT Security Master Policy
+            IT Equipment & Asset Policy
+            Remote Work & VPN Policy
+            IT Helpdesk FAQ Quick Reference
+
+Payroll   -> Compensation & Salary Master Policy
+            Reimbursement & Expense Policy
+            Payroll FAQ Quick Reference
+
+Facilities-> Office Facilities & Workspace Policy
+            Health, Safety & Security Policy
+            Facilities FAQ Quick Reference
+
+General   -> Employee Handbook
+            New Employee Quick Start Guide
+
+HOW TO ANSWER - RULES
+
+1. Identify category (HR / IT / Payroll / Facilities / General).
+2. Identify the best matching document and section from context.
+3. Answer in 2-5 clear sentences (or numbered steps for process questions).
+4. End answer with citation in this exact format:
+   (Source: [Document Name], Section X.X)
+5. Use follow-up context when the user question refers to previous topic.
+6. If answer is not present in context, return exactly:
+   I couldn't find this in our knowledge base.
+7. Never guess or invent policy details.
+
+TONE
+
+- Professional, friendly, direct.
+- Address employee as "you".
+- Use Indian English where natural (Rs, lakh, cheque, queries).
+
+OUTPUT FORMAT
+
+Return ONLY JSON:
+{
+  "subject": "Short title in 3-8 words",
+  "description": "1-2 sentence factual third-person summary",
+  "answer": "Final answer text",
+  "suggested_followups": [
+    "Follow-up question 1",
+    "Follow-up question 2",
+    "Follow-up question 3"
+  ]
+}
+
+DOCUMENT CONTEXT
+{context}"""
+
 
 def compute_confidence(chunks: List[Dict[str, Any]]) -> float:
     """
@@ -10074,7 +10187,7 @@ def generate_answer_and_followups(
         )
     context = "\n\n---\n\n".join(context_parts)
 
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context)
+    system_prompt = FEW_SHOT_PROMPT_TEMPLATE.format(context=context)
     model = pick_chat_model(question)
 
     try:
@@ -10507,6 +10620,7 @@ def search(
 
     # ── 4. Hybrid search (query_vec already computed in step 2b for semantic cache) ──
     chunks: List[Dict[str, Any]] = []
+    inferred_sub_category = infer_sub_category(question, used_category)
 
     if wants_combined_it_hr_summary(question):
         requested_categories = [c for c in ("IT", "HR") if c in all_categories]
@@ -10541,11 +10655,29 @@ def search(
             query_vector=query_vec,
             top_k=settings.top_k_use,
             category=search_category,
-            include_uncategorized=True,
+            sub_category=inferred_sub_category,
+            include_uncategorized=False if inferred_sub_category else True,
             only_published=True,
         )
 
-        # Fallback: retry without category if empty
+        # Fallback 1: keep category but drop sub-category
+        if not chunks and search_category and inferred_sub_category:
+            log.info(
+                f"  No results in {search_category}/{inferred_sub_category}. "
+                "Retrying with category only."
+            )
+            chunks = search_index.hybrid_search(
+                query=question,
+                query_vector=query_vec,
+                top_k=settings.top_k_use,
+                category=search_category,
+                sub_category=None,
+                include_uncategorized=True,
+                only_published=True,
+            )
+            category_source = "fallback_category_only"
+
+        # Fallback 2: retry without category if empty
         if not chunks and search_category:
             log.info(f"  No results in {search_category}. Falling back to all categories.")
             chunks = search_index.hybrid_search(
@@ -10553,9 +10685,12 @@ def search(
                 query_vector=query_vec,
                 top_k=settings.top_k_use,
                 category=None,
+                sub_category=None,
                 only_published=True,
             )
             category_source = "fallback_all"
+
+    chunks = boost_chunks_by_doc_priority(question, chunks)
 
     # ── 5. Generate answer + follow-ups + subject + description (single LLM call) ──
     answer, followups, model_used, subject, description = generate_answer_and_followups(

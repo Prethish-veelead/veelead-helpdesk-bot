@@ -1090,6 +1090,7 @@ def hybrid_search(
     query_vector: List[float],
     top_k: int = 5,
     category: Optional[str] = None,
+    sub_category: Optional[str] = None,
     include_uncategorized: bool = True,
     only_published: bool = True,
     extra_filter: Optional[str] = None,
@@ -1103,6 +1104,8 @@ def hybrid_search(
         top_k: How many chunks to return.
         category: If set, restrict to this category (e.g. "IT", "HR").
                   When include_uncategorized=True, also includes Uncategorized.
+        sub_category: If set, additionally restrict to this sub-category
+                      (e.g. "Payroll", "Compensation", "Leave").
         include_uncategorized: When filtering by category, also include
                                Uncategorized items (they might be relevant
                                but unlabeled).
@@ -1130,6 +1133,10 @@ def hybrid_search(
             )
         else:
             filters.append(f"category eq '{cat_escaped}'")
+
+    if sub_category:
+        sub_cat_escaped = _escape_odata(sub_category)
+        filters.append(f"sub_category eq '{sub_cat_escaped}'")
 
     if extra_filter:
         filters.append(f"({extra_filter})")
