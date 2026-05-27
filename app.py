@@ -49,11 +49,20 @@ import contextvars as _ctxv
 # Holds the current request's unique ID. Set by middleware on each
 # request, read by the log filter to inject `[req-xxxx]` into every
 # log line emitted while handling that request.
+# _request_id_var: _ctxv.ContextVar[str] = _ctxv.ContextVar("request_id", default="")
+
+
+# class _RequestIdFilter(logging.Filter):
+#     """Adds request_id from contextvar to every log record."""
+#     def filter(self, record: logging.LogRecord) -> bool:
+#         rid = _request_id_var.get()
+#         record.request_id = f"[req-{rid}] " if rid else ""
+#         return True
+
 _request_id_var: _ctxv.ContextVar[str] = _ctxv.ContextVar("request_id", default="")
 
 
 class _RequestIdFilter(logging.Filter):
-    """Adds request_id from contextvar to every log record."""
     def filter(self, record: logging.LogRecord) -> bool:
         rid = _request_id_var.get()
         record.request_id = f"[req-{rid}] " if rid else ""
@@ -87,14 +96,28 @@ class _RedactSensitiveFilter(logging.Filter):
         return True
 
 
+# logging.basicConfig(
+#     level=getattr(logging, settings.log_level, logging.INFO),
+#     format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
+# )
+# # Attach filters to the root logger so they apply to everyone
+# _root = logging.getLogger()
+# _root.addFilter(_RequestIdFilter())
+# _root.addFilter(_RedactSensitiveFilter())
+# Build handler first, attach filters to it BEFORE basicConfig
+_handler = logging.StreamHandler()
+_handler.addFilter(_RequestIdFilter())
+_handler.addFilter(_RedactSensitiveFilter())
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s"
+))
+
+# Use basicConfig only to set level; don't let it create its own handler
 logging.basicConfig(
     level=getattr(logging, settings.log_level, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
+    handlers=[_handler],   # <-- pass OUR handler, not the default StreamHandler
 )
-# Attach filters to the root logger so they apply to everyone
-_root = logging.getLogger()
-_root.addFilter(_RequestIdFilter())
-_root.addFilter(_RedactSensitiveFilter())
+
 
 log = logging.getLogger("app")
 
