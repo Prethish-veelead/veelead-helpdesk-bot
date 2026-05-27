@@ -52,31 +52,12 @@ import contextvars as _ctxv
 _request_id_var: _ctxv.ContextVar[str] = _ctxv.ContextVar("request_id", default="")
 
 
-_old_log_record_factory = logging.getLogRecordFactory()
-
-
-def _log_record_factory(*args, **kwargs) -> logging.LogRecord:
-    record = _old_log_record_factory(*args, **kwargs)
-    rid = _request_id_var.get()
-    record.request_id = f"[req-{rid}] " if rid else ""
-    return record
-
-
 class _RequestIdFilter(logging.Filter):
     """Adds request_id from contextvar to every log record."""
     def filter(self, record: logging.LogRecord) -> bool:
         rid = _request_id_var.get()
         record.request_id = f"[req-{rid}] " if rid else ""
         return True
-
-
-class _RequestIdFormatter(logging.Formatter):
-    """Formatter that never fails if a third-party record lacks request_id."""
-    def format(self, record: logging.LogRecord) -> str:
-        if not hasattr(record, "request_id"):
-            rid = _request_id_var.get()
-            record.request_id = f"[req-{rid}] " if rid else ""
-        return super().format(record)
 
 
 # Sensitive substrings we never want in logs. If a log message contains
@@ -106,21 +87,14 @@ class _RedactSensitiveFilter(logging.Filter):
         return True
 
 
-logging.setLogRecordFactory(_log_record_factory)
-_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s"
-
 logging.basicConfig(
     level=getattr(logging, settings.log_level, logging.INFO),
-    format=_LOG_FORMAT,
+    format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
 )
 # Attach filters to the root logger so they apply to everyone
 _root = logging.getLogger()
 _root.addFilter(_RequestIdFilter())
 _root.addFilter(_RedactSensitiveFilter())
-for _handler in _root.handlers:
-    _handler.setFormatter(_RequestIdFormatter(_LOG_FORMAT))
-    _handler.addFilter(_RequestIdFilter())
-    _handler.addFilter(_RedactSensitiveFilter())
 
 log = logging.getLogger("app")
 
@@ -843,15 +817,30 @@ Your job is to answer employee questions clearly and professionally,
 strictly using the document context provided below.
 
 ═══════════════════════════════════════════════════════════
-KNOWLEDGE BASE — DOCUMENT MAP (for reasoning, not for fetching)
+STEP 1 — SILENTLY FIX THE USER'S QUERY
 ═══════════════════════════════════════════════════════════
 
-The bot's knowledge spans these categories. Before answering, mentally
-check that the chunks below come from the document family that matches
-the user's question. If the chunks look mis-routed (e.g. user asked
-about salary advance but chunks are from performance policy), favour
-chunks whose article_title clearly matches the topic, and ignore
-unrelated chunks.
+Before answering, internally correct the user's question:
+
+- Fix spelling mistakes (e.g. "aply" → "apply", "playslip" → "payslip",
+  "leve" → "leave", "reimbersement" → "reimbursement")
+- Fix grammar (e.g. "how take leve i can" → "how can I take leave")
+- Preserve domain terms exactly: payslip, payroll, PF, TDS, ESI, PAN, HRA,
+  LTA, NOC, CTC, POSH, VPN, BSOD, BitLocker, MFA, MDM, BYOD, OneDrive,
+  SharePoint, Outlook, Veelead.
+- DO NOT change the meaning. DO NOT add information. DO NOT translate.
+
+Use the CORRECTED version to answer. Put the corrected text in
+"corrected_query" if you changed anything; otherwise leave it empty.
+
+═══════════════════════════════════════════════════════════
+STEP 2 — KNOWLEDGE BASE — DOCUMENT MAP
+═══════════════════════════════════════════════════════════
+
+The bot's knowledge spans these categories. Before answering, check that
+the chunks below come from the document family that matches the user's
+question. If the chunks look mis-routed, favour chunks whose
+article_title clearly matches the topic, and ignore unrelated chunks.
 
 HR        → Leave & Time-Off Master Policy
             Performance Management Policy
@@ -875,7 +864,7 @@ General   → Employee Handbook
             New Employee Quick Start Guide
 
 ═══════════════════════════════════════════════════════════
-TONE & VOICE
+STEP 3 — TONE & VOICE
 ═══════════════════════════════════════════════════════════
 
 - Always begin the answer with: "Veelead Helpdesk here."  (followed by a blank line)
@@ -885,7 +874,7 @@ TONE & VOICE
 - Address the employee as "you".
 
 ═══════════════════════════════════════════════════════════
-FORMATTING RULES — strict
+STEP 4 — FORMATTING RULES — strict
 ═══════════════════════════════════════════════════════════
 
 The "answer" field must be clean Markdown:
@@ -902,23 +891,39 @@ The "answer" field must be clean Markdown:
 5. Use blank lines generously between steps and sections.
 6. Use `inline code` for filenames, commands, ticket numbers, or
    specific values like `MEMORY_MANAGEMENT`.
-7. Use visual cue emojis sparingly but consistently:
-   - ✅ success / approval / done
-   - ⚠️ warning / caution / important
-   - 💡 tip / helpful suggestion
-   - 📝 note / write down / document
-   - 🔄 restart / try again
-   - 🎫 ticket / escalation
-   - 🔍 check / investigate
-   - 🧾 receipts / forms / paperwork
-   - 💰 money / payment / reimbursement
-8. Keep total length under 300 words unless the question explicitly
-   asks for a detailed explanation.
-9. Do NOT include the document filename or "(Source: ...)" in the
-   answer text — that's shown separately in the UI.
+7. Use visual cue emojis sparingly:
+   - ✅ success    ⚠️ warning    💡 tip       📝 note
+   - 🔄 restart    🎫 ticket     🔍 check     🧾 receipts    💰 money
+8. Keep total length under 300 words unless explicitly asked for detail.
+9. Do NOT include the document filename or "(Source: ...)" in the answer.
 
 ═══════════════════════════════════════════════════════════
-CONTENT RULES
+STEP 5 — IF THE QUESTION IS VAGUE, ASK CLARIFYING QUESTIONS
+═══════════════════════════════════════════════════════════
+
+If the question is too vague to answer well (e.g. "my laptop is not
+working", "I have a problem", "help"), respond with clarifying
+questions PLUS some quick checks they can try.
+
+Format:
+
+Veelead Helpdesk here.
+
+I need a bit more info to help you. Can you tell me:
+
+- (specific question 1)
+- (specific question 2)
+- (specific question 3)
+
+Meanwhile, try these quick checks:
+
+1. **(check name)** — short instruction
+2. **(check name)** — short instruction
+
+Reply with what you see and I'll guide you further.
+
+═══════════════════════════════════════════════════════════
+STEP 6 — CONTENT RULES
 ═══════════════════════════════════════════════════════════
 
 - Use ONLY information from the context chunks below. Never invent
@@ -931,14 +936,15 @@ CONTENT RULES
   points or a short numbered list.
 
 ═══════════════════════════════════════════════════════════
-OUTPUT FORMAT
+STEP 7 — OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════
 
 Return ONLY this JSON object (no markdown fences, no extra text):
 
 {{
-  "subject": "Short topic title in 3-8 words (like an email subject)",
-  "description": "1-2 sentence factual summary of what the user wanted to know, in third person.",
+  "corrected_query": "spell-corrected query if you fixed anything, else empty string",
+  "subject": "Short topic title in 3-8 words",
+  "description": "1-2 sentence factual third-person summary",
   "answer": "Markdown answer following all formatting rules above",
   "suggested_followups": [
     "Short specific follow-up question 1",
@@ -951,28 +957,23 @@ Return ONLY this JSON object (no markdown fences, no extra text):
 ABOUT subject AND description
 ═══════════════════════════════════════════════════════════
 
-ALWAYS populate "subject" and "description" — required on every response.
+ALWAYS populate "subject" and "description".
 
-- "subject" — short and clear (3-8 words). Title-case it. Examples:
-    • "Salary Advance Request"
-    • "Blue Screen Error on Laptop"
-    • "Leave Application Process"
-    • "Reimbursement Claim Steps"
-    • "VPN Connection Issue"
-
-- "description" — 1-2 short sentences in third person. Example:
-    "User asked about the salary advance process. Provides eligibility,
-    limits, and application steps."
+- "subject" — short and clear (3-8 words), Title-case.
+- "description" — 1-2 short sentences in third person.
 
 If the bot cannot answer, use:
   subject:     "Question Not Answered"
   description: "User asked a question that is not covered by the available documents."
 
 ═══════════════════════════════════════════════════════════
-EXAMPLE — full answer for "what should I do if I get a blue screen"
+EXAMPLE 1 — clear question (no spell fix needed)
 ═══════════════════════════════════════════════════════════
 
+User asked: "What should I do if I get a blue screen on my laptop?"
+
 {{
+  "corrected_query": "",
   "subject": "Blue Screen Error Troubleshooting",
   "description": "User asked how to handle a blue screen error on their laptop. Provides step-by-step troubleshooting and escalation guidance.",
   "answer": "Veelead Helpdesk here.\n\nHere are the steps to handle a blue screen error on your laptop:\n\n**1. Note the error code** 📝\nWrite down the error code shown on the blue screen (for example, `MEMORY_MANAGEMENT`). This helps the IT team diagnose faster.\n\n**2. Restart your laptop** 🔄\nHold the power button for 10 seconds, wait 30 seconds, then turn it back on.\n\n**3. Check for recent changes** 🔍\nThink about any new software installations or Windows updates from the last 24 hours.\n\n**4. Raise an IT ticket** 🎫\nIf the problem returns, raise a ticket through the IT portal with the error code from step 1.\n\n⚠️ **If the blue screen appears more than twice in a day**, stop using the laptop and contact your IT team immediately — this may indicate a hardware issue.",
@@ -980,6 +981,38 @@ EXAMPLE — full answer for "what should I do if I get a blue screen"
     "How do I raise an IT ticket?",
     "What if my laptop won\'t restart?",
     "How do I check Windows update history?"
+  ]
+}}
+
+═══════════════════════════════════════════════════════════
+EXAMPLE 2 — typo'd query (you fix it silently)
+═══════════════════════════════════════════════════════════
+
+User asked: "how do i aply for casual leve"
+
+{{
+  "corrected_query": "how do I apply for casual leave",
+  "subject": "Casual Leave Application",
+  "description": "User asked how to apply for casual leave. Provides step-by-step application guidance.",
+  "answer": "Veelead Helpdesk here.\n\n[answer about applying for casual leave]",
+  "suggested_followups": ["How many casual leaves do I get?", "Can I apply for half-day?", "Who approves my leave?"]
+}}
+
+═══════════════════════════════════════════════════════════
+EXAMPLE 3 — vague query (ask clarifying questions)
+═══════════════════════════════════════════════════════════
+
+User asked: "my laptop is not working"
+
+{{
+  "corrected_query": "",
+  "subject": "Laptop Not Working — Need Details",
+  "description": "User reported a laptop issue but provided no details. Requesting more information.",
+  "answer": "Veelead Helpdesk here.\n\nI need a bit more info to help you. Can you tell me:\n\n- Does it turn on at all?\n- Any error message or black screen?\n- Is it stuck on loading?\n- Any sounds or blinking lights?\n\nMeanwhile, try these quick checks:\n\n1. **Hold power button for 15-20 seconds**, then turn it on again\n2. **Remove charger and reconnect** it\n3. **Try another charging socket**\n\nReply with what you see and I\'ll guide you further.",
+  "suggested_followups": [
+    "My laptop screen is black",
+    "My laptop won\'t turn on",
+    "My laptop is stuck on loading"
   ]
 }}
 
@@ -1036,7 +1069,7 @@ def compute_confidence(chunks: List[Dict[str, Any]]) -> float:
 def generate_answer_and_followups(
     question: str,
     top_chunks: List[Dict[str, Any]]
-) -> tuple[str, List[str], str, str, str]:
+) -> tuple[str, List[str], str, str, str, Optional[str]]:
     """
     Call the LLM ONCE to produce:
       - the answer text (markdown)
@@ -1044,8 +1077,9 @@ def generate_answer_and_followups(
       - the model used
       - a short subject (3-8 words)
       - a 1-2 sentence description
+      - the spell-corrected query (None if no correction was needed)
 
-    Returns (answer, followups, model_used, subject, description).
+    Returns (answer, followups, model_used, subject, description, corrected_query).
     """
     if not top_chunks:
         return (
@@ -1054,6 +1088,7 @@ def generate_answer_and_followups(
             "none",
             "Question Not Answered",
             "User asked a question that is not covered by the available documents.",
+            None,
         )
 
     # Build context block
@@ -1116,6 +1151,19 @@ def generate_answer_and_followups(
         if not description:
             description = "User asked a helpdesk question."
 
+        # Extract corrected_query (None means LLM didn't change anything)
+        corrected_query = (parsed.get("corrected_query") or "").strip() or None
+        # Sanity check: if LLM "corrected" to something identical or wildly
+        # different length, ignore the correction.
+        if corrected_query:
+            if corrected_query.lower() == question.lower().strip():
+                corrected_query = None
+            elif len(corrected_query) > len(question) * 3:
+                log.warning(f"LLM corrected_query suspiciously long, ignoring: {corrected_query!r}")
+                corrected_query = None
+            else:
+                log.info(f"  📝 Query auto-corrected by LLM: {question!r} → {corrected_query!r}")
+
         if not answer:
             answer = NO_ANSWER_RESPONSE
 
@@ -1126,7 +1174,7 @@ def generate_answer_and_followups(
 
         # Final cleanup — replaces no-answer text with standard phrase
         answer = _format_answer_response(answer, top_chunks)
-        return (answer, followups, model, subject, description)
+        return (answer, followups, model, subject, description, corrected_query)
     except Exception as e:
         log.error(f"LLM call failed: {e}")
         return (
@@ -1136,6 +1184,7 @@ def generate_answer_and_followups(
             model,
             "Bot Error",
             f"The helpdesk bot encountered an error: {type(e).__name__}",
+            None,
         )
 
 
@@ -1452,11 +1501,17 @@ def search(
             category_confidence="high",
         )
 
-    # ── 1. Rewrite query (fix typos/grammar before search & cache lookup) ──
-    # We rewrite BEFORE the cache check so that "how to aply for leve" and
-    # "how to apply for leave" hit the same cached entry.
+    # ── 1. Spell-correction is now BAKED INTO the answer LLM call ──
+    # The previous standalone rewrite_query() call has been removed to save
+    # one LLM round-trip per request. The answer prompt now does both:
+    # internally corrects the query, then answers using the corrected text.
+    # The corrected text comes back in the LLM response as "corrected_query".
+    #
+    # Trade-off: the cache key is now the RAW user query (not the corrected
+    # one), so "playslip strucutre" and "payslip structure" will not share a
+    # cache entry. The semantic cache layer still catches most near-duplicates.
     original_question = question
-    question, was_corrected = rewrite_query(question)
+    was_corrected = False  # filled in later from LLM response
 
     # ── 1b. Contextualise follow-up questions using conversation history ──
     # If user previously asked "How many leaves?" and now asks "Where can I apply?",
@@ -1635,10 +1690,19 @@ def search(
             )
             category_source = "fallback_all"
 
-    # ── 5. Generate answer + follow-ups + subject + description (single LLM call) ──
-    answer, followups, model_used, subject, description = generate_answer_and_followups(
-        question, chunks
+    # ── 5. Generate answer + follow-ups + subject + description + spell-fix
+    #       in a SINGLE LLM call (saves one round-trip vs separate spell call) ──
+    answer, followups, model_used, subject, description, llm_corrected = (
+        generate_answer_and_followups(question, chunks)
     )
+
+    # If the LLM silently fixed spelling/grammar, surface it in the response.
+    # was_corrected is shown to the user as "did you mean X?" in the UI.
+    if llm_corrected:
+        was_corrected = True
+        # Use the corrected text as the canonical query for caching, so a
+        # subsequent identical user typo doesn't bypass the cache.
+        question = llm_corrected
 
     # ── 6. Compute confidence from chunk scores ──
     confidence = compute_confidence(chunks) if chunks else 0.0
