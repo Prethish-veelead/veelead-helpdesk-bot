@@ -70,6 +70,15 @@ class _RequestIdFilter(logging.Filter):
         return True
 
 
+class _RequestIdFormatter(logging.Formatter):
+    """Formatter that never fails if a third-party record lacks request_id."""
+    def format(self, record: logging.LogRecord) -> str:
+        if not hasattr(record, "request_id"):
+            rid = _request_id_var.get()
+            record.request_id = f"[req-{rid}] " if rid else ""
+        return super().format(record)
+
+
 # Sensitive substrings we never want in logs. If a log message contains
 # any of these (e.g. someone accidentally logged the whole .env), the
 # filter replaces them with [REDACTED].
@@ -98,16 +107,18 @@ class _RedactSensitiveFilter(logging.Filter):
 
 
 logging.setLogRecordFactory(_log_record_factory)
+_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s"
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
+    format=_LOG_FORMAT,
 )
 # Attach filters to the root logger so they apply to everyone
 _root = logging.getLogger()
 _root.addFilter(_RequestIdFilter())
 _root.addFilter(_RedactSensitiveFilter())
 for _handler in _root.handlers:
+    _handler.setFormatter(_RequestIdFormatter(_LOG_FORMAT))
     _handler.addFilter(_RequestIdFilter())
     _handler.addFilter(_RedactSensitiveFilter())
 
