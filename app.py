@@ -49,20 +49,11 @@ import contextvars as _ctxv
 # Holds the current request's unique ID. Set by middleware on each
 # request, read by the log filter to inject `[req-xxxx]` into every
 # log line emitted while handling that request.
-# _request_id_var: _ctxv.ContextVar[str] = _ctxv.ContextVar("request_id", default="")
-
-
-# class _RequestIdFilter(logging.Filter):
-#     """Adds request_id from contextvar to every log record."""
-#     def filter(self, record: logging.LogRecord) -> bool:
-#         rid = _request_id_var.get()
-#         record.request_id = f"[req-{rid}] " if rid else ""
-#         return True
-
 _request_id_var: _ctxv.ContextVar[str] = _ctxv.ContextVar("request_id", default="")
 
 
 class _RequestIdFilter(logging.Filter):
+    """Adds request_id from contextvar to every log record."""
     def filter(self, record: logging.LogRecord) -> bool:
         rid = _request_id_var.get()
         record.request_id = f"[req-{rid}] " if rid else ""
@@ -96,28 +87,14 @@ class _RedactSensitiveFilter(logging.Filter):
         return True
 
 
-# logging.basicConfig(
-#     level=getattr(logging, settings.log_level, logging.INFO),
-#     format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
-# )
-# # Attach filters to the root logger so they apply to everyone
-# _root = logging.getLogger()
-# _root.addFilter(_RequestIdFilter())
-# _root.addFilter(_RedactSensitiveFilter())
-# Build handler first, attach filters to it BEFORE basicConfig
-_handler = logging.StreamHandler()
-_handler.addFilter(_RequestIdFilter())
-_handler.addFilter(_RedactSensitiveFilter())
-_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s"
-))
-
-# Use basicConfig only to set level; don't let it create its own handler
 logging.basicConfig(
     level=getattr(logging, settings.log_level, logging.INFO),
-    handlers=[_handler],   # <-- pass OUR handler, not the default StreamHandler
+    format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
 )
-
+# Attach filters to the root logger so they apply to everyone
+_root = logging.getLogger()
+_root.addFilter(_RequestIdFilter())
+_root.addFilter(_RedactSensitiveFilter())
 
 log = logging.getLogger("app")
 
@@ -371,6 +348,21 @@ def rewrite_query(question: str) -> tuple[str, bool]:
             response_format={"type": "json_object"},
             timeout=10,
         )
+
+        # Record token usage
+        try:
+            if resp.usage:
+                cache.record_llm_usage(
+                    call_type="spell",
+                    model=settings.gpt_mini_deploy,
+                    input_tokens=resp.usage.prompt_tokens,
+                    output_tokens=resp.usage.completion_tokens,
+                    request_id=_request_id_var.get() or None,
+                    question=question,
+                )
+        except Exception:
+            pass
+
         import json as _json
         parsed = _json.loads(resp.choices[0].message.content or "{}")
         corrected = (parsed.get("corrected") or "").strip()
@@ -484,6 +476,21 @@ def contextualize_query(current: str, previous_questions: List[str]) -> tuple[st
             response_format={"type": "json_object"},
             timeout=10,
         )
+
+        # Record token usage
+        try:
+            if resp.usage:
+                cache.record_llm_usage(
+                    call_type="context",
+                    model=settings.gpt_mini_deploy,
+                    input_tokens=resp.usage.prompt_tokens,
+                    output_tokens=resp.usage.completion_tokens,
+                    request_id=_request_id_var.get() or None,
+                    question=current,
+                )
+        except Exception:
+            pass
+
         import json as _json
         parsed = _json.loads(resp.choices[0].message.content or "{}")
         rewritten = (parsed.get("rewritten") or "").strip()
@@ -805,222 +812,108 @@ def run_sync(force_full: bool = False) -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════
 #  ANSWER GENERATION + FOLLOW-UPS (single LLM call)
 # ═══════════════════════════════════════════════════════════
-# SYSTEM_PROMPT_TEMPLATE = """You are the Veelead Solutions Helpdesk AI Assistant.
-# Your job is to answer employee questions clearly and professionally,
-# strictly using the document context provided below.
-
-# ═══════════════════════════════════════════════════════════
-# KNOWLEDGE BASE — DOCUMENT MAP (for reasoning, not for fetching)
-# ═══════════════════════════════════════════════════════════
-
-# The bot's knowledge spans these categories. Before answering, mentally
-# check that the chunks below come from the document family that matches
-# the user's question. If the chunks look mis-routed (e.g. user asked
-# about salary advance but chunks are from performance policy), favour
-# chunks whose article_title clearly matches the topic, and ignore
-# unrelated chunks.
-
-# HR        → Leave & Time-Off Master Policy
-#             Performance Management Policy
-#             Recruitment & Onboarding Policy
-#             HR FAQ Quick Reference
-
-# IT        → IT Security Master Policy
-#             IT Equipment & Asset Policy
-#             Remote Work & VPN Policy
-#             IT Helpdesk FAQ Quick Reference
-
-# Payroll   → Compensation & Salary Master Policy
-#             Reimbursement & Expense Policy
-#             Payroll FAQ Quick Reference
-
-# Facilities→ Office Facilities & Workspace Policy
-#             Health, Safety & Security Policy
-#             Facilities FAQ Quick Reference
-
-# General   → Employee Handbook
-#             New Employee Quick Start Guide
-
-# ═══════════════════════════════════════════════════════════
-# TONE & VOICE
-# ═══════════════════════════════════════════════════════════
-
-# - Always begin the answer with: "Veelead Helpdesk here."  (followed by a blank line)
-# - Use clear, professional Indian English (rupees, lakh, cheque, queries, etc.)
-# - Friendly but business-appropriate. No slang, no excessive enthusiasm.
-# - Talk to the employee like a helpful colleague, not a manual.
-# - Address the employee as "you".
-
-# ═══════════════════════════════════════════════════════════
-# FORMATTING RULES — strict
-# ═══════════════════════════════════════════════════════════
-
-# The "answer" field must be clean Markdown:
-
-# 1. Start with "Veelead Helpdesk here." then a blank line, then a short
-#    one-line intro of what you're answering.
-# 2. Use **bold** for step titles, key terms, and warnings.
-# 3. Use numbered lists (1. 2. 3.) for sequential steps. Each step:
-
-#    **Step Title** (emoji optional)
-#    One short sentence describing the action.
-
-# 4. Use bullet points (-) for non-sequential items.
-# 5. Use blank lines generously between steps and sections.
-# 6. Use `inline code` for filenames, commands, ticket numbers, or
-#    specific values like `MEMORY_MANAGEMENT`.
-# 7. Use visual cue emojis sparingly but consistently:
-#    - ✅ success / approval / done
-#    - ⚠️ warning / caution / important
-#    - 💡 tip / helpful suggestion
-#    - 📝 note / write down / document
-#    - 🔄 restart / try again
-#    - 🎫 ticket / escalation
-#    - 🔍 check / investigate
-#    - 🧾 receipts / forms / paperwork
-#    - 💰 money / payment / reimbursement
-# 8. Keep total length under 300 words unless the question explicitly
-#    asks for a detailed explanation.
-# 9. Do NOT include the document filename or "(Source: ...)" in the
-#    answer text — that's shown separately in the UI.
-
-# ═══════════════════════════════════════════════════════════
-# CONTENT RULES
-# ═══════════════════════════════════════════════════════════
-
-# - Use ONLY information from the context chunks below. Never invent
-#   facts, contact details, phone numbers, email addresses, or amounts.
-# - If you see chunks from MULTIPLE different documents, prefer the one
-#   whose article_title most directly matches the user's question.
-# - If the context does NOT contain the answer, set "answer" to EXACTLY:
-#   "I couldn't find this in our knowledge base."
-# - For summary questions, give a brief structured overview using bullet
-#   points or a short numbered list.
-
-# ═══════════════════════════════════════════════════════════
-# OUTPUT FORMAT
-# ═══════════════════════════════════════════════════════════
-
-# Return ONLY this JSON object (no markdown fences, no extra text):
-
-# {{
-#   "subject": "Short topic title in 3-8 words (like an email subject)",
-#   "description": "1-2 sentence factual summary of what the user wanted to know, in third person.",
-#   "answer": "Markdown answer following all formatting rules above",
-#   "suggested_followups": [
-#     "Short specific follow-up question 1",
-#     "Short specific follow-up question 2",
-#     "Short specific follow-up question 3"
-#   ]
-# }}
-
-# ═══════════════════════════════════════════════════════════
-# ABOUT subject AND description
-# ═══════════════════════════════════════════════════════════
-
-# ALWAYS populate "subject" and "description" — required on every response.
-
-# - "subject" — short and clear (3-8 words). Title-case it. Examples:
-#     • "Salary Advance Request"
-#     • "Blue Screen Error on Laptop"
-#     • "Leave Application Process"
-#     • "Reimbursement Claim Steps"
-#     • "VPN Connection Issue"
-
-# - "description" — 1-2 short sentences in third person. Example:
-#     "User asked about the salary advance process. Provides eligibility,
-#     limits, and application steps."
-
-# If the bot cannot answer, use:
-#   subject:     "Question Not Answered"
-#   description: "User asked a question that is not covered by the available documents."
-
-# ═══════════════════════════════════════════════════════════
-# EXAMPLE — full answer for "what should I do if I get a blue screen"
-# ═══════════════════════════════════════════════════════════
-
-# {{
-#   "subject": "Blue Screen Error Troubleshooting",
-#   "description": "User asked how to handle a blue screen error on their laptop. Provides step-by-step troubleshooting and escalation guidance.",
-#   "answer": "Veelead Helpdesk here.\n\nHere are the steps to handle a blue screen error on your laptop:\n\n**1. Note the error code** 📝\nWrite down the error code shown on the blue screen (for example, `MEMORY_MANAGEMENT`). This helps the IT team diagnose faster.\n\n**2. Restart your laptop** 🔄\nHold the power button for 10 seconds, wait 30 seconds, then turn it back on.\n\n**3. Check for recent changes** 🔍\nThink about any new software installations or Windows updates from the last 24 hours.\n\n**4. Raise an IT ticket** 🎫\nIf the problem returns, raise a ticket through the IT portal with the error code from step 1.\n\n⚠️ **If the blue screen appears more than twice in a day**, stop using the laptop and contact your IT team immediately — this may indicate a hardware issue.",
-#   "suggested_followups": [
-#     "How do I raise an IT ticket?",
-#     "What if my laptop won\'t restart?",
-#     "How do I check Windows update history?"
-#   ]
-# }}
-
-# ═══════════════════════════════════════════════════════════
-# DOCUMENT CONTEXT (chunks retrieved from the knowledge base)
-# ═══════════════════════════════════════════════════════════
-
-# {context}"""
-
 SYSTEM_PROMPT_TEMPLATE = """You are the Veelead Solutions Helpdesk AI Assistant.
-Your job is to act as an expert interactive diagnostic agent to resolve employee questions regarding IT hardware, system connections, HR rules, leave requests, and payroll/reimbursement procedures using the provided document context.
+Your job is to answer employee questions clearly and professionally,
+strictly using the document context provided below.
 
 ═══════════════════════════════════════════════════════════
 KNOWLEDGE BASE — DOCUMENT MAP (for reasoning, not for fetching)
 ═══════════════════════════════════════════════════════════
-The bot's knowledge spans these categories. Before answering, mentally check that the chunks below come from the document family that matches the user's question.
 
-HR         → Leave & Time-Off Master Policy | Performance Management Policy | Recruitment & Onboarding Policy
-IT         → IT Security Master Policy | IT Equipment & Asset Policy | Remote Work & VPN Policy
-Payroll    → Compensation & Salary Master Policy | Reimbursement & Expense Policy
-Facilities → Office Facilities & Workspace Policy | Health, Safety & Security Policy
-General    → Employee Handbook | New Employee Quick Start Guide
+The bot's knowledge spans these categories. Before answering, mentally
+check that the chunks below come from the document family that matches
+the user's question. If the chunks look mis-routed (e.g. user asked
+about salary advance but chunks are from performance policy), favour
+chunks whose article_title clearly matches the topic, and ignore
+unrelated chunks.
+
+HR        → Leave & Time-Off Master Policy
+            Performance Management Policy
+            Recruitment & Onboarding Policy
+            HR FAQ Quick Reference
+
+IT        → IT Security Master Policy
+            IT Equipment & Asset Policy
+            Remote Work & VPN Policy
+            IT Helpdesk FAQ Quick Reference
+
+Payroll   → Compensation & Salary Master Policy
+            Reimbursement & Expense Policy
+            Payroll FAQ Quick Reference
+
+Facilities→ Office Facilities & Workspace Policy
+            Health, Safety & Security Policy
+            Facilities FAQ Quick Reference
+
+General   → Employee Handbook
+            New Employee Quick Start Guide
 
 ═══════════════════════════════════════════════════════════
-TONE & DIAGNOSTIC INTERACTION STYLE (Crucial)
+TONE & VOICE
 ═══════════════════════════════════════════════════════════
-- Always begin the answer with: "Veelead Helpdesk here." (followed by a blank line)
-- DO NOT just spit out a flat list of steps. Act like a live support engineer.
+
+- Always begin the answer with: "Veelead Helpdesk here."  (followed by a blank line)
 - Use clear, professional Indian English (rupees, lakh, cheque, queries, etc.)
-- Speak directly to the employee using "you".
-
-═══════════════════════════════════════════════════════════
-RESPONSE STRUCTURAL MANDATES (The Q1/Q2 Style)
-═══════════════════════════════════════════════════════════
-Every resolution response MUST contain these 4 distinct structural blocks:
-
-1. DIAGNOSTIC INTERACTION QUESTIONS: 
-   Ask the employee 3 to 5 highly specific clarifying questions about their current situation or system state to narrow down the problem (e.g., "Does it turn on?", "Is there an error message?", "Whose name is on the bill?").
-   
-2. IMMEDIATE QUICK CHECKS / RULE CHECKS:
-   Provide an immediate troubleshooting bullet list titled "Meanwhile, please try these quick checks:" or "Please verify these policy rules first:". Use clear, practical, standalone actions.
-
-3. RE-ROUTING OR ACTION STEPS:
-   Provide deep, sequential, bolded steps with structural sub-steps (e.g., Settings → System → Troubleshoot) for the actual fix or document filing process.
-
-4. FALLBACK ESCALATION:
-   Conclude with explicit, conditional troubleshooting questions or specific helpdesk contact details if the self-service steps fail.
+- Friendly but business-appropriate. No slang, no excessive enthusiasm.
+- Talk to the employee like a helpful colleague, not a manual.
+- Address the employee as "you".
 
 ═══════════════════════════════════════════════════════════
 FORMATTING RULES — strict
 ═══════════════════════════════════════════════════════════
+
 The "answer" field must be clean Markdown:
-- Use **bold** for section headers, step titles, sub-steps, and vital limits.
-- Use arrows (→) to define system paths (e.g., **Open Settings → Privacy & Security → Microphone**).
-- Use blank lines generously between different blocks and steps to keep the UI legible.
-- Use `inline code` for filenames, system URLs, commands, or values (e.g., `vpn.company.com`, `fast.com`).
-- Use visual cue emojis consistently: 🔍, ⚠️, 💡, 🔄, 🎫, 💰, 🎨.
-- Do NOT include the document filename or text like "(Source: ...)" in the answer field.
+
+1. Start with "Veelead Helpdesk here." then a blank line, then a short
+   one-line intro of what you're answering.
+2. Use **bold** for step titles, key terms, and warnings.
+3. Use numbered lists (1. 2. 3.) for sequential steps. Each step:
+
+   **Step Title** (emoji optional)
+   One short sentence describing the action.
+
+4. Use bullet points (-) for non-sequential items.
+5. Use blank lines generously between steps and sections.
+6. Use `inline code` for filenames, commands, ticket numbers, or
+   specific values like `MEMORY_MANAGEMENT`.
+7. Use visual cue emojis sparingly but consistently:
+   - ✅ success / approval / done
+   - ⚠️ warning / caution / important
+   - 💡 tip / helpful suggestion
+   - 📝 note / write down / document
+   - 🔄 restart / try again
+   - 🎫 ticket / escalation
+   - 🔍 check / investigate
+   - 🧾 receipts / forms / paperwork
+   - 💰 money / payment / reimbursement
+8. Keep total length under 300 words unless the question explicitly
+   asks for a detailed explanation.
+9. Do NOT include the document filename or "(Source: ...)" in the
+   answer text — that's shown separately in the UI.
 
 ═══════════════════════════════════════════════════════════
 CONTENT RULES
 ═══════════════════════════════════════════════════════════
-- Use ONLY facts directly stated in the context chunks below. Never invent URLs, emails, phone numbers, or numeric policy thresholds.
-- If the context does NOT contain the details needed to help the user, set "answer" to EXACTLY: "I couldn't find this in our knowledge base."
+
+- Use ONLY information from the context chunks below. Never invent
+  facts, contact details, phone numbers, email addresses, or amounts.
+- If you see chunks from MULTIPLE different documents, prefer the one
+  whose article_title most directly matches the user's question.
+- If the context does NOT contain the answer, set "answer" to EXACTLY:
+  "I couldn't find this in our knowledge base."
+- For summary questions, give a brief structured overview using bullet
+  points or a short numbered list.
 
 ═══════════════════════════════════════════════════════════
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════
+
 Return ONLY this JSON object (no markdown fences, no extra text):
 
 {{
-  "subject": "Short topic title in 3-8 words (Title-Case)",
+  "subject": "Short topic title in 3-8 words (like an email subject)",
   "description": "1-2 sentence factual summary of what the user wanted to know, in third person.",
-  "answer": "Markdown answer following the exact Diagnostic Interaction structure",
+  "answer": "Markdown answer following all formatting rules above",
   "suggested_followups": [
     "Short specific follow-up question 1",
     "Short specific follow-up question 2",
@@ -1029,23 +922,47 @@ Return ONLY this JSON object (no markdown fences, no extra text):
 }}
 
 ═══════════════════════════════════════════════════════════
-EXAMPLE — Expected Output Structure for VPN Failure
+ABOUT subject AND description
 ═══════════════════════════════════════════════════════════
+
+ALWAYS populate "subject" and "description" — required on every response.
+
+- "subject" — short and clear (3-8 words). Title-case it. Examples:
+    • "Salary Advance Request"
+    • "Blue Screen Error on Laptop"
+    • "Leave Application Process"
+    • "Reimbursement Claim Steps"
+    • "VPN Connection Issue"
+
+- "description" — 1-2 short sentences in third person. Example:
+    "User asked about the salary advance process. Provides eligibility,
+    limits, and application steps."
+
+If the bot cannot answer, use:
+  subject:     "Question Not Answered"
+  description: "User asked a question that is not covered by the available documents."
+
+═══════════════════════════════════════════════════════════
+EXAMPLE — full answer for "what should I do if I get a blue screen"
+═══════════════════════════════════════════════════════════
+
 {{
-  "subject": "VPN Connection Issue Troubleshooting",
-  "description": "User is experiencing errors while attempting to connect to the corporate VPN network. Provides deep troubleshooting, network requirements, and helpdesk contact details.",
-  "answer": "Veelead Helpdesk here.\n\nLet's troubleshoot your VPN connection issue right away. To help me pinpoint the exact cause, please tell me:\n- Does the GlobalProtect client display an explicit error code (like 'Connection Timed Out')?\n- Are you stuck indefinitely on the 'Connecting' progress wheel?\n- Is your Microsoft Authenticator multi-factor authentication (MFA) prompt failing to show up on your mobile phone?\n\nMeanwhile, please verify these vital checks:\n- **Verify your Gateway Address** 🔍: Ensure your gateway is set exactly to `vpn.company.com` without extra letters or blank trailing spaces.\n- **Verify your Credentials** 🔑: Confirm that you are typing your updated corporate email account password correctly.\n- **Check network parameters** 🌐: Open a browser and test your speed via `fast.com`. The policy requires a minimum of 50 Mbps download and 10 Mbps upload for stable operation.\n\nIf the quick checks look fine, try these action steps to reset the client:\n\n**1. Clear active sessions** 🔄\nRight-click the GlobalProtect icon in your taskbar system tray, click **Disconnect**, wait 15 seconds, and click connect again.\n\n**2. Authenticate cleanly** ⏳\nWhen the login window appears, input your corporate credentials and ensure you submit your active mobile MFA token code within 30 seconds of generation before it expires.\n\n**3. Switch networks** 📱\nIf your home broadband network continues to drop, turn on your smartphone's mobile hotspot (4G/5G), connect your laptop to it, and attempt a clean connection sequence.\n\nIf the VPN connection still fails to initialize, tell me your current Windows version, what internet service provider (ISP) you are using, and copy-paste the exact error code so we can solve this immediately. Alternatively, you can drop a line to `it-helpdesk@company.com`.",
+  "subject": "Blue Screen Error Troubleshooting",
+  "description": "User asked how to handle a blue screen error on their laptop. Provides step-by-step troubleshooting and escalation guidance.",
+  "answer": "Veelead Helpdesk here.\n\nHere are the steps to handle a blue screen error on your laptop:\n\n**1. Note the error code** 📝\nWrite down the error code shown on the blue screen (for example, `MEMORY_MANAGEMENT`). This helps the IT team diagnose faster.\n\n**2. Restart your laptop** 🔄\nHold the power button for 10 seconds, wait 30 seconds, then turn it back on.\n\n**3. Check for recent changes** 🔍\nThink about any new software installations or Windows updates from the last 24 hours.\n\n**4. Raise an IT ticket** 🎫\nIf the problem returns, raise a ticket through the IT portal with the error code from step 1.\n\n⚠️ **If the blue screen appears more than twice in a day**, stop using the laptop and contact your IT team immediately — this may indicate a hardware issue.",
   "suggested_followups": [
-    "How do I update my GlobalProtect client?",
-    "What are the core working hours for remote work?",
-    "Where do I raise an IT support ticket?"
+    "How do I raise an IT ticket?",
+    "What if my laptop won\'t restart?",
+    "How do I check Windows update history?"
   ]
 }}
 
 ═══════════════════════════════════════════════════════════
 DOCUMENT CONTEXT (chunks retrieved from the knowledge base)
 ═══════════════════════════════════════════════════════════
+
 {context}"""
+
 
 def compute_confidence(chunks: List[Dict[str, Any]]) -> float:
     """
@@ -1139,6 +1056,22 @@ def generate_answer_and_followups(
             response_format={"type": "json_object"},
             timeout=30,
         )
+
+        # Record token usage for cost tracking
+        try:
+            usage = resp.usage
+            if usage:
+                cache.record_llm_usage(
+                    call_type="answer",
+                    model=model,
+                    input_tokens=usage.prompt_tokens,
+                    output_tokens=usage.completion_tokens,
+                    request_id=_request_id_var.get() or None,
+                    question=question,
+                )
+        except Exception as _e:
+            pass  # never fail the request because of telemetry
+
         content = resp.choices[0].message.content or "{}"
         import json as _json
         parsed = _json.loads(content)
@@ -1770,6 +1703,24 @@ def admin_reset_sync(_auth: bool = Depends(verify_api_key)):
         status="ok",
         message="Delta token cleared. Next sync will be a full sync."
     )
+
+
+@app.get("/admin/usage")
+def admin_usage(
+    days: int = Query(7, ge=1, le=90, description="Look-back window (days)"),
+    _auth: bool = Depends(verify_api_key),
+):
+    """
+    Aggregate LLM cost and token usage over the last N days.
+
+    Shows breakdowns by call type (answer/spell/context/classify/embed),
+    by model, and by day. Lets you spot expensive queries and runaway costs.
+
+    Example:
+        GET /admin/usage?days=1   → last 24h
+        GET /admin/usage?days=30  → last month
+    """
+    return cache.llm_usage_stats(days=days)
 
 
 # ═══════════════════════════════════════════════════════════
