@@ -1,0 +1,261 @@
+{
+  "timestamp": "2026-05-27T14:48:18.928257",
+  "total": 36,
+  "passed": 0,
+  "failed": 36,
+  "success_rate": "0.0%",
+  "results": [
+    {
+      "index": 1,
+      "question": "How many days of Earned Leave (EL), Casual Leave (CL), and Sick Leave (SL) do I get in a calendar year?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 2,
+      "question": "I am a mid-year joiner. How will my leave balance be prorated?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 3,
+      "question": "Can I take Casual Leave for more than 3 consecutive days?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 4,
+      "question": "Do I need to submit a medical certificate if I take Sick Leave, and from what day is it mandatory?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 5,
+      "question": "What are the advance notice period requirements for planning a long vacation using my Earned Leave?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 6,
+      "question": "Can I apply for a half-day leave, and what leave types can I use for it?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 7,
+      "question": "I fell sick suddenly and couldn't access the system. How many days do I have to file a backdated leave request after returning?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 8,
+      "question": "Can I combine my Casual Leave (CL) and Earned Leave (EL) together for a single continuous absence?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 9,
+      "question": "What is the \"mandatory minimum usage rule\" for Earned Leaves, and what happens if I don't use them?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 10,
+      "question": "How many unused Earned Leaves can I carry forward to the next calendar year, and what happens to the remaining balance?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 11,
+      "question": "Does the company follow a \"Sandwich Leave Policy\" for weekends and public holidays falling between my leave dates?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 12,
+      "question": "On what day of the month is my salary credited, and how can I download my digital payslip?",
+      "expected_document": "Compensation & Salary Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 13,
+      "question": "Why is my monthly take-home salary significantly lower than the annual CTC mentioned in my offer letter?",
+      "expected_document": "Compensation & Salary Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 14,
+      "question": "What is the formula used to calculate my year-end leave encashment, and which salary component is it based on?",
+      "expected_document": "Leave & Time-Off Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 15,
+      "question": "Am I eligible to receive a salary advance, and what is the recovery process?",
+      "expected_document": "Compensation & Salary Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 16,
+      "question": "What is the eligibility criterion for receiving Gratuity, and what formula is used to calculate it upon separation?",
+      "expected_document": "Compensation & Salary Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 17,
+      "question": "What is the timeline for the final financial credit of my Full & Final (F&F) settlement after my last working day?",
+      "expected_document": "Compensation & Salary Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 18,
+      "question": "What is the monthly reimbursement limit for my personal mobile phone and home internet broadband?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 19,
+      "question": "Can I claim a reimbursement for purchasing a home office chair, keyboard, or monitor under the WFH setup?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 20,
+      "question": "What are the annual financial limits for claiming professional books, learning certifications, and gym memberships?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 21,
+      "question": "Do I need to provide a physical original bill for expense claims, or are digital scans accepted?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 22,
+      "question": "From what invoice value is a proper GST tax invoice mandatory for processing my reimbursement claim?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 23,
+      "question": "What is the deadline to submit an expense claim after the transaction is made?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 24,
+      "question": "I am planning a family trip. How does the Leave Travel Allowance (LTA) block-year system work for tax exemptions?",
+      "expected_document": "Reimbursement & Expense Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 25,
+      "question": "What is the default hybrid work model split between office days and remote working days?",
+      "expected_document": "Remote Work & VPN Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 26,
+      "question": "How do I connect to the corporate VPN from home, and what gateway address should I use?",
+      "expected_document": "Remote Work & VPN Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 27,
+      "question": "What are the mandatory \"core hours\" during which I must be online and responsive on Slack/Teams when working remotely?",
+      "expected_document": "Remote Work & VPN Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 28,
+      "question": "My home internet is running slow. What are the minimum upload and download speeds required to work from home?",
+      "expected_document": "Remote Work & VPN Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 29,
+      "question": "Am I allowed to work from a local coffee shop or public caf\u00e9 using public Wi-Fi?",
+      "expected_document": "Remote Work & VPN Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 30,
+      "question": "Can I request a second external monitor or upgrade my laptop's RAM?",
+      "expected_document": "IT Equipment & Asset Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 31,
+      "question": "What happens if I accidentally spill liquid on my corporate laptop or lose it? Am I financially liable for the replacement?",
+      "expected_document": "IT Equipment & Asset Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 32,
+      "question": "What password strength guidelines must I follow, and how frequently do I need to rotate my corporate login password?",
+      "expected_document": "IT Security Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 33,
+      "question": "Can I use my personal smartphone to check work emails, and what is the registration process?",
+      "expected_document": "IT Security Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 34,
+      "question": "I think I accidentally clicked on a phishing link in an unexpected email. What immediate steps should I take?",
+      "expected_document": "IT Security Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 35,
+      "question": "I lost my physical smart access ID badge. What should I do immediately, and is there a replacement fee?",
+      "expected_document": "Corporate Facilities & Workspace Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    },
+    {
+      "index": 36,
+      "question": "Can I bring family members or external friends to the office floors for lunch or a quick visit?",
+      "expected_document": "Corporate Facilities & Workspace Master Policy",
+      "actual_document": "ERROR: 404: Endpoint not found at http://localhost:8000/search.json",
+      "status": "FAIL"
+    }
+  ]
+}
