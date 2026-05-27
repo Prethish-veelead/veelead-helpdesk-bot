@@ -52,6 +52,16 @@ import contextvars as _ctxv
 _request_id_var: _ctxv.ContextVar[str] = _ctxv.ContextVar("request_id", default="")
 
 
+_old_log_record_factory = logging.getLogRecordFactory()
+
+
+def _log_record_factory(*args, **kwargs) -> logging.LogRecord:
+    record = _old_log_record_factory(*args, **kwargs)
+    rid = _request_id_var.get()
+    record.request_id = f"[req-{rid}] " if rid else ""
+    return record
+
+
 class _RequestIdFilter(logging.Filter):
     """Adds request_id from contextvar to every log record."""
     def filter(self, record: logging.LogRecord) -> bool:
@@ -87,6 +97,8 @@ class _RedactSensitiveFilter(logging.Filter):
         return True
 
 
+logging.setLogRecordFactory(_log_record_factory)
+
 logging.basicConfig(
     level=getattr(logging, settings.log_level, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(request_id)s%(name)s: %(message)s",
@@ -95,6 +107,9 @@ logging.basicConfig(
 _root = logging.getLogger()
 _root.addFilter(_RequestIdFilter())
 _root.addFilter(_RedactSensitiveFilter())
+for _handler in _root.handlers:
+    _handler.addFilter(_RequestIdFilter())
+    _handler.addFilter(_RedactSensitiveFilter())
 
 log = logging.getLogger("app")
 
