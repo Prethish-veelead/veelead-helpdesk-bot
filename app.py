@@ -1220,6 +1220,7 @@ class SearchResponse(BaseModel):
     q: Optional[str] = None
     corrected_query: Optional[str] = None              # populated only when typos/grammar were fixed
     contextualized_query: Optional[str] = None         # populated only when follow-up was disambiguated from history
+    previous_questions: Optional[List[str]] = None
     category_used: Optional[str] = None
     category_source: Optional[str] = None
     category_confidence: Optional[str] = None
@@ -1548,6 +1549,7 @@ def search(
                 cached_resp["q"] = original_question
                 cached_resp["corrected_query"] = question if was_corrected else None
                 cached_resp["contextualized_query"] = contextualised_query if was_contextualised else None
+                cached_resp["previous_questions"] = history if history else None
                 try:
                     return SearchResponse(**cached_resp)
                 except Exception as e:
@@ -1603,6 +1605,7 @@ def search(
                 cached_resp["q"] = original_question
                 cached_resp["corrected_query"] = question if was_corrected else None
                 cached_resp["contextualized_query"] = contextualised_query if was_contextualised else None
+                cached_resp["previous_questions"] = history if history else None
                 try:
                     return SearchResponse(**cached_resp)
                 except Exception as e:
@@ -1754,6 +1757,7 @@ def search(
         q=original_question,                                           # original user query (for display)
         corrected_query=question if was_corrected else None,           # corrected version (None if no change)
         contextualized_query=contextualised_query if was_contextualised else None,  # disambiguated form (None if no change)
+        previous_questions=history if history else None,
         category_used=used_category,
         category_source=category_source,
         category_confidence=category_confidence,
